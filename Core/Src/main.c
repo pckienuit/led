@@ -274,6 +274,20 @@ void Rainbow_Effect (int speed) {
 	}
 }
 
+void Pixel_Run_Effect (int speed, int red, int green, int blue) {
+	if (speed > 10) speed = 10;
+	if (speed < 1)	speed = 1;
+
+	Set_LED(MAX_LED-1, 0, 0 , 0);
+	for (int i = 1; i < MAX_LED; ++i) {
+		Set_LED(i, red, green, blue);
+		Set_LED(i-1, 0, 0 , 0);
+		Set_Brightness(10);
+		WS2812_Send();
+		HAL_Delay((LED_DELAY*3)/speed);
+	}
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -327,7 +341,8 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 	  //Fade_Effect(255, 0, 0, 10);
-	  Rainbow_Effect(1);
+	  //Rainbow_Effect(1);
+	  Pixel_Run_Effect(1, 123, 23, 100);
   }
   /* USER CODE END 3 */
 }
