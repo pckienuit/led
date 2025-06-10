@@ -183,17 +183,33 @@ void Fade_Effect (int Red, int Green, int Blue, int speed) { //speed 1 -> 10
 	}
 }
 
-void Rainbow_Effect (int speed) {
-	for (int r = 0; r <= 255; r+=10) {
-		for (int g = 0; g <= 255; g+=10){
-			for (int b = 0; b <= 255; b+=10) {
-				Set_LED(1, r, g, b);
-				Set_Brightness(100);
-				WS2812_Send();
-				HAL_Delay(10);
-			}
-		}
-	}
+// Smooth Rainbow using HSV color model
+void Smooth_Rainbow_All(int speed) {
+    if (speed > 10) speed = 10;
+    if (speed < 1) speed = 1;
+    
+    for (int hue = 0; hue < 360; hue += 2) {  // Step of 2 for smoother transition
+        int r, g, b;
+        
+        // Simple HSV to RGB conversion without floating point
+        int sector = hue / 60;
+        int remainder = hue % 60;
+        
+        switch(sector) {
+            case 0: r = 255; g = (remainder * 255) / 60; b = 0; break;
+            case 1: r = 255 - ((remainder * 255) / 60); g = 255; b = 0; break;
+            case 2: r = 0; g = 255; b = (remainder * 255) / 60; break;
+            case 3: r = 0; g = 255 - ((remainder * 255) / 60); b = 255; break;
+            case 4: r = (remainder * 255) / 60; g = 0; b = 255; break;
+            case 5: r = 255; g = 0; b = 255 - ((remainder * 255) / 60); break;
+            default: r = 255; g = 0; b = 0; break;
+        }
+        
+        Set_All_LEDs_Same_Color(r, g, b);
+        Set_Brightness(100);
+        WS2812_Send();
+        HAL_Delay(50 / speed);
+    }
 }
 
 /* USER CODE END 0 */
