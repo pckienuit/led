@@ -36,6 +36,34 @@
 #define MAX_LED 60
 #define USE_BRIGHTNESS 1
 #define DEFAULT_BRIGHTNESS 10
+
+// Keypad defines
+#define KEYPAD_ROWS 4
+#define KEYPAD_COLS 4
+
+// Effect states - Updated for 4 modes: fade, rainbow, run, flashing
+#define EFFECT_FADE      0  // Fade effect
+#define EFFECT_RAINBOW   1  // Rainbow effect (no color change needed)
+#define EFFECT_RUN       2  // Pixel run effect  
+#define EFFECT_FLASHING  3  // Flashing effect
+#define EFFECT_OFF       4
+#define MAX_EFFECTS      5
+
+// Color definitions
+#define COLOR_BLUE   0  // Xanh dương
+#define COLOR_RED    1  // Đỏ
+#define COLOR_PINK   2  // Hồng  
+#define COLOR_GREEN  3  // Xanh lá
+#define MAX_COLORS   4
+
+// Color values [R, G, B]
+int color_values[MAX_COLORS][3] = {
+    {0, 100, 255},    // Xanh dương
+    {255, 0, 0},      // Đỏ
+    {255, 20, 147},   // Hồng
+    {0, 255, 0}       // Xanh lá
+};
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -68,9 +96,153 @@ uint8_t LED_Mod[MAX_LED][4];
 
 int datasentflag = 0;
 
+// Keypad variables - Reversed column order to avoid PA3 issue
+GPIO_TypeDef* keypad_row_ports[KEYPAD_ROWS] = {GPIOA, GPIOA, GPIOA, GPIOA};
+uint16_t keypad_row_pins[KEYPAD_ROWS] = {GPIO_PIN_4, GPIO_PIN_5, GPIO_PIN_6, GPIO_PIN_7}; // Row 0,1,2,3
+GPIO_TypeDef* keypad_col_ports[KEYPAD_COLS] = {GPIOA, GPIOA, GPIOA, GPIOA};
+uint16_t keypad_col_pins[KEYPAD_COLS] = {GPIO_PIN_0, GPIO_PIN_1, GPIO_PIN_2, GPIO_PIN_3}; // Col 0,1,2,3 (PA0,PA1,PA2,PA3)
+
+// Alternative: Use Port B if Port A has issues (uncomment to use)
+// GPIO_TypeDef* keypad_row_ports[KEYPAD_ROWS] = {GPIOB, GPIOB, GPIOB, GPIOB};
+// uint16_t keypad_row_pins[KEYPAD_ROWS] = {GPIO_PIN_0, GPIO_PIN_1, GPIO_PIN_2, GPIO_PIN_3}; // Row 0,1,2,3
+// GPIO_TypeDef* keypad_col_ports[KEYPAD_COLS] = {GPIOB, GPIOB, GPIOB, GPIOB};
+// uint16_t keypad_col_pins[KEYPAD_COLS] = {GPIO_PIN_4, GPIO_PIN_5, GPIO_PIN_6, GPIO_PIN_7}; // Col 0,1,2,3
+
+// Keypad layout - Updated for reversed column order
+char keypad_layout[KEYPAD_ROWS][KEYPAD_COLS] = {
+    {'3', '2', '1', '0'},    // S3, S2, S1, S0 (reversed)
+    {'7', '6', '5', '4'},    // S7, S6, S5, S4  
+    {'B', 'A', '9', '8'},    // S11, S10, S9, S8
+    {'F', 'E', 'D', 'C'}     // S15, S14, S13, S12
+};
+
+// Effect control variables
+volatile int current_effect = EFFECT_FLASHING;
+volatile int effect_changed = 1;
+volatile int effect_running = 0;
+
+// Color and speed control
+volatile int current_color = COLOR_BLUE;  // Start with blue
+volatile int current_speed = 5;           // Speed from 1 (slow) to 10 (fast)
+volatile int current_brightness = 50;     // Brightness from 1 (dim) to 100 (bright)
+
 void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim) {
 	HAL_TIM_PWM_Stop_DMA(&htim1, TIM_CHANNEL_1);
 	datasentflag = 1;
+}
+
+// Keypad functions
+void Keypad_Init(void) {
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+    
+    // Enable GPIOA clock (changed from GPIOB)
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    
+    // Configure row pins as output
+    for(int i = 0; i < KEYPAD_ROWS; i++) {
+        GPIO_InitStruct.Pin = keypad_row_pins[i];
+        GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+        GPIO_InitStruct.Pull = GPIO_NOPULL;
+        GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+        HAL_GPIO_Init(keypad_row_ports[i], &GPIO_InitStruct);
+        HAL_GPIO_WritePin(keypad_row_ports[i], keypad_row_pins[i], GPIO_PIN_SET);
+    }
+    
+    // Configure column pins as input with pull-up
+    for(int i = 0; i < KEYPAD_COLS; i++) {
+        GPIO_InitStruct.Pin = keypad_col_pins[i];
+        GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+        GPIO_InitStruct.Pull = GPIO_PULLUP;
+        HAL_GPIO_Init(keypad_col_ports[i], &GPIO_InitStruct);
+    }
+}
+
+char Keypad_Read(void) {
+    for(int row = 0; row < KEYPAD_ROWS; row++) {
+        // Set current row LOW, others HIGH
+        for(int i = 0; i < KEYPAD_ROWS; i++) {
+            if(i == row) {
+                HAL_GPIO_WritePin(keypad_row_ports[i], keypad_row_pins[i], GPIO_PIN_RESET);
+            } else {
+                HAL_GPIO_WritePin(keypad_row_ports[i], keypad_row_pins[i], GPIO_PIN_SET);
+            }
+        }
+        
+        HAL_Delay(2); // Small delay for stabilization
+        
+        // Read columns
+        for(int col = 0; col < KEYPAD_COLS; col++) {
+            if(HAL_GPIO_ReadPin(keypad_col_ports[col], keypad_col_pins[col]) == GPIO_PIN_RESET) {
+                // Button pressed, wait for release
+                while(HAL_GPIO_ReadPin(keypad_col_ports[col], keypad_col_pins[col]) == GPIO_PIN_RESET) {
+                    HAL_Delay(10);
+                }
+                HAL_Delay(50); // Debounce delay
+                return keypad_layout[row][col];
+            }
+        }
+    }
+    return 0; // No key pressed
+}
+
+void Process_Keypad_Input(char key) {
+    switch(key) {
+        // Effects
+        case '1':  // S1 - Fade effect
+            current_effect = EFFECT_FADE;
+            effect_changed = 1;
+            break;
+        case '5':  // S5 - Rainbow effect  
+            current_effect = EFFECT_RAINBOW;
+            effect_changed = 1;
+            break;
+        case '9':  // S9 - Run effect
+            current_effect = EFFECT_RUN;
+            effect_changed = 1;
+            break;
+        case 'D':  // S13 - Flashing effect
+            current_effect = EFFECT_FLASHING;
+            effect_changed = 1;
+            break;
+            
+        // Speed control
+        case '2':  // S2 - Decrease speed
+            if(current_speed > 1) current_speed--;
+            break;
+        case '3':  // S3 - Increase speed
+            if(current_speed < 10) current_speed++;
+            break;
+            
+        // Brightness control
+        case '6':  // S6 - Decrease brightness
+            current_brightness -= 10;
+            if(current_brightness < 1) current_brightness = 1;
+            break;
+        case '7':  // S7 - Increase brightness
+            current_brightness += 10;
+            if(current_brightness > 100) current_brightness = 100;
+            break;
+            
+        // Color and control
+        case 'A':  // S10 - Change color (not for Rainbow)
+            if(current_effect != EFFECT_RAINBOW) {
+                current_color = (current_color + 1) % MAX_COLORS;
+            }
+            break;
+        case 'F':  // S15 - Turn off
+            current_effect = EFFECT_OFF;
+            effect_changed = 1;
+            break;
+        
+        // Disabled problematic buttons
+        case '0':  // S0 - Disabled (problematic)
+        case '4':  // S4 - Disabled (problematic) 
+        case '8':  // S8 - Disabled (problematic)
+        case 'C':  // S12 - Disabled (problematic)
+        default:
+            // Do nothing for problematic keys and others
+            break;
+    }
 }
 
 void Set_LED (int LEDnum, int Red, int Green, int Blue) {
@@ -171,13 +343,13 @@ void Fade_Effect (int Red, int Green, int Blue, int speed) { //speed 1 -> 10
 
 	Set_All_LEDs_Same_Color(Red, Green, Blue);
 
-	for (int i = 0; i <= 100; ++i) {
+	for (int i = 0; i <= current_brightness; ++i) {  // Use current_brightness instead of 100
 		Set_Brightness(i);
 		WS2812_Send();
 		HAL_Delay(LED_DELAY/speed);
 	}
 
-	for (int i = 100; i >= 0; --i) {
+	for (int i = current_brightness; i >= 0; --i) {  // Use current_brightness instead of 100
 		Set_Brightness(i);
 		WS2812_Send();
 		HAL_Delay(LED_DELAY/speed);
@@ -269,7 +441,7 @@ void Rainbow_Effect (int speed) {
 			HAL_Delay(1);
 		}
 
-		Set_Brightness(DEFAULT_BRIGHTNESS);
+		Set_Brightness(current_brightness);
 		WS2812_Send();
 		HAL_Delay(LED_DELAY/speed);
 	}
@@ -283,7 +455,7 @@ void Pixel_Run_Effect (int speed, int red, int green, int blue) {
 	for (int i = 1; i < MAX_LED; ++i) {
 		Set_LED(i, red, green, blue);
 		Set_LED(i-1, 0, 0 , 0);
-		Set_Brightness(DEFAULT_BRIGHTNESS);
+		Set_Brightness(current_brightness);
 		WS2812_Send();
 		HAL_Delay((LED_DELAY*3)/speed);
 	}
@@ -335,37 +507,83 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_TIM1_Init();
+  
   /* USER CODE BEGIN 2 */
-
-//
-//  Set_LED(1, 120, 47, 78);
-//  Set_LED(2, 165, 0, 50);
-//  Set_LED(3, 0, 255, 0);
-//  Set_LED(4, 12, 54, 200);
-//  Set_LED(5, 255, 0, 0);
-
-
+  
+  // Initialize keypad
+  Keypad_Init();
+  
+  // Turn off all LEDs initially
+  Set_All_LEDs_Same_Color(0, 0, 0);
+  Set_Brightness(0);
+  WS2812_Send();
+  
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    // Check for keypad input
+    char key = Keypad_Read();
+    if(key != 0) {
+        Process_Keypad_Input(key);
+    }
+    
+    // Run current effect based on state
+    switch(current_effect) {
+        case EFFECT_FADE:
+            Set_All_LEDs_Same_Color(color_values[current_color][0], 
+                                  color_values[current_color][1], 
+                                  color_values[current_color][2]);
+            // Apply fade with current brightness
+            for (int brightness = 0; brightness <= current_brightness; brightness += 2) {
+                Set_Brightness(brightness);
+                WS2812_Send();
+                HAL_Delay((LED_DELAY * 5) / current_speed);
+            }
+            for (int brightness = current_brightness; brightness >= 0; brightness -= 2) {
+                Set_Brightness(brightness);
+                WS2812_Send();
+                HAL_Delay((LED_DELAY * 5) / current_speed);
+            }
+            break;
+            
+        case EFFECT_RAINBOW:
+            Rainbow_Effect(current_speed);
+            // Rainbow effect handles its own brightness, but we can limit it
+            break;
+            
+        case EFFECT_RUN:
+            Pixel_Run_Effect(current_speed, color_values[current_color][0], 
+                           color_values[current_color][1], 
+                           color_values[current_color][2]);
+            break;
+            
+        case EFFECT_FLASHING:
+            Set_All_LEDs_Same_Color(color_values[current_color][0], 
+                                  color_values[current_color][1], 
+                                  color_values[current_color][2]);
+            Set_Brightness(current_brightness);
+            WS2812_Send();
+            HAL_Delay((LED_DELAY * 30) / current_speed);
+            Set_Brightness(0);
+            WS2812_Send();
+            HAL_Delay((LED_DELAY * 30) / current_speed);
+            break;
+            
+        case EFFECT_OFF:
+        default:
+            Set_All_LEDs_Same_Color(0, 0, 0);
+            Set_Brightness(0);
+            WS2812_Send();
+            HAL_Delay(100);
+            break;
+    }
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  int k = 10;
-	  Fade_Effect(255, 0, 0, 1);
-	  HAL_Delay(LED_DELAY*k);
-
-	  Rainbow_Effect(10);
-	  HAL_Delay(LED_DELAY*k);
-
-	  Pixel_Run_Effect(1, 123, 23, 100);
-	  HAL_Delay(LED_DELAY*k);
-
-	  Flashing_Effect(1, 123, 23, 100);
-	  HAL_Delay(LED_DELAY*k);
   }
   /* USER CODE END 3 */
 }
