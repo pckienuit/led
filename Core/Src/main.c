@@ -79,41 +79,6 @@ void Set_LED (int LEDnum, int Red, int Green, int Blue) {
 	LED_Data[LEDnum][3] = Blue;
 }
 
-// Function to create HSV to RGB conversion
-void HSV_to_RGB(int h, int s, int v, int* r, int* g, int* b) {
-    int c = (v * s) / 100;
-    int x = c * (100 - abs((h * 100 / 60) % 200 - 100)) / 100;
-    int m = v - c;
-    
-    if (h < 60) {
-        *r = c; *g = x; *b = 0;
-    } else if (h < 120) {
-        *r = x; *g = c; *b = 0;
-    } else if (h < 180) {
-        *r = 0; *g = c; *b = x;
-    } else if (h < 240) {
-        *r = 0; *g = x; *b = c;
-    } else if (h < 300) {
-        *r = x; *g = 0; *b = c;
-    } else {
-        *r = c; *g = 0; *b = x;
-    }
-    
-    *r = (*r + m) * 255 / 100;
-    *g = (*g + m) * 255 / 100;
-    *b = (*b + m) * 255 / 100;
-}
-
-// Function to set rainbow effect for all LEDs
-void Set_Rainbow_All_LEDs(void) {
-    int r, g, b;
-    for (int i = 0; i < MAX_LED; i++) {
-        int hue = (i * 360) / MAX_LED;  // Distribute hues across 360 degrees
-        HSV_to_RGB(hue, 100, 100, &r, &g, &b);  // Full saturation and brightness
-        Set_LED(i, r, g, b);
-    }
-}
-
 // Function to set all LEDs to the same color
 void Set_All_LEDs_Same_Color(int Red, int Green, int Blue) {
     for (int i = 0; i < MAX_LED; i++) {
@@ -152,6 +117,7 @@ uint16_t pwmData[(24*MAX_LED)+50];
 //
 //	HAL_TIM_PWM_Start_DMA(&htim1, TIM_CHANNEL_1, (uint32_t *)pwmData, 24);
 //}
+
 
 void WS2812_Send (void) {
 	uint32_t indx = 0;
@@ -196,6 +162,40 @@ void WS2812_Send (void) {
 	datasentflag = 0;
 }
 
+#define LED_DELAY 10
+
+void Fade_Effect (int Red, int Green, int Blue, int speed) { //speed 1 -> 10
+	if (speed > 10) speed = 10;
+	if (speed < 1)	speed = 1;
+
+	Set_All_LEDs_Same_Color(Red, Green, Blue);
+
+	for (int i = 0; i <= 100; ++i) {
+		Set_Brightness(i);
+		WS2812_Send();
+		HAL_Delay(LED_DELAY/speed);
+	}
+
+	for (int i = 100; i >= 0; --i) {
+		Set_Brightness(i);
+		WS2812_Send();
+		HAL_Delay(LED_DELAY/speed);
+	}
+}
+
+void Rainbow_Effect (int speed) {
+	for (int r = 0; r <= 255; r+=10) {
+		for (int g = 0; g <= 255; g+=10){
+			for (int b = 0; b <= 255; b+=10) {
+				Set_LED(1, r, g, b);
+				Set_Brightness(100);
+				WS2812_Send();
+				HAL_Delay(10);
+			}
+		}
+	}
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -238,11 +238,6 @@ int main(void)
 //  Set_LED(4, 12, 54, 200);
 //  Set_LED(5, 255, 0, 0);
 
-  Set_All_LEDs_Same_Color(255, 0, 220);
-
-  Set_Brightness(10);
-
-  WS2812_Send();
 
   /* USER CODE END 2 */
 
@@ -253,18 +248,8 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	    for (int i=10; i <= 100; ++i) {
-	    		  Set_Brightness(i);
-	    		  WS2812_Send();
-	    		  HAL_Delay(30);
-	    	  }
-
-	    for (int i=100; i >= 10; --i) {
-	  	  Set_Brightness(i);
-	  	  WS2812_Send();
-	  	  HAL_Delay(30);
-	    }
-
+	  //Fade_Effect(255, 0, 0, 10);
+	  Rainbow_Effect(10);
   }
   /* USER CODE END 3 */
 }
