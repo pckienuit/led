@@ -35,6 +35,7 @@
 /* USER CODE BEGIN PD */
 #define MAX_LED 60
 #define USE_BRIGHTNESS 1
+#define DEFAULT_BRIGHTNESS 10
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -233,7 +234,7 @@ void Rainbow_Effect_Single (int led_num, int speed) {
 		//Set_All_LEDs_Same_Color(red, green, blue);
 
 		Set_LED(led_num, red, green, blue);
-		Set_Brightness(100);
+		Set_Brightness(DEFAULT_BRIGHTNESS);
 		WS2812_Send();
 		HAL_Delay(LED_DELAY/speed);
 	}
@@ -243,7 +244,7 @@ void Rainbow_Effect (int speed) {
 	if (speed > 10) speed = 10;
 	if (speed < 1)	speed = 1;
 
-	for (int hue = 0; hue < 360; hue += 1) {
+	for (int hue = 0; hue < 360; hue += 36) {
 		int red, green, blue;
 
 		for (int led_num = 0; led_num < MAX_LED; ++led_num) {
@@ -268,7 +269,7 @@ void Rainbow_Effect (int speed) {
 			HAL_Delay(1);
 		}
 
-		Set_Brightness(10);
+		Set_Brightness(DEFAULT_BRIGHTNESS);
 		WS2812_Send();
 		HAL_Delay(LED_DELAY/speed);
 	}
@@ -282,10 +283,23 @@ void Pixel_Run_Effect (int speed, int red, int green, int blue) {
 	for (int i = 1; i < MAX_LED; ++i) {
 		Set_LED(i, red, green, blue);
 		Set_LED(i-1, 0, 0 , 0);
-		Set_Brightness(10);
+		Set_Brightness(DEFAULT_BRIGHTNESS);
 		WS2812_Send();
 		HAL_Delay((LED_DELAY*3)/speed);
 	}
+}
+
+void Flashing_Effect (int speed, int red, int green, int blue) {
+	if (speed > 10) speed = 10;
+	if (speed < 1)	speed = 1;
+
+	Set_All_LEDs_Same_Color(red, green, blue);
+	Set_Brightness(DEFAULT_BRIGHTNESS);
+	WS2812_Send();
+	HAL_Delay((LED_DELAY*15)/speed);
+	Set_Brightness(0);
+	WS2812_Send();
+	HAL_Delay((LED_DELAY*15)/speed);
 }
 
 /* USER CODE END 0 */
@@ -340,9 +354,18 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  //Fade_Effect(255, 0, 0, 10);
-	  //Rainbow_Effect(1);
+	  int k = 10;
+	  Fade_Effect(255, 0, 0, 1);
+	  HAL_Delay(LED_DELAY*k);
+
+	  Rainbow_Effect(10);
+	  HAL_Delay(LED_DELAY*k);
+
 	  Pixel_Run_Effect(1, 123, 23, 100);
+	  HAL_Delay(LED_DELAY*k);
+
+	  Flashing_Effect(1, 123, 23, 100);
+	  HAL_Delay(LED_DELAY*k);
   }
   /* USER CODE END 3 */
 }
