@@ -183,33 +183,95 @@ void Fade_Effect (int Red, int Green, int Blue, int speed) { //speed 1 -> 10
 	}
 }
 
-// Smooth Rainbow using HSV color model
-void Smooth_Rainbow_All(int speed) {
-    if (speed > 10) speed = 10;
-    if (speed < 1) speed = 1;
-    
-    for (int hue = 0; hue < 360; hue += 2) {  // Step of 2 for smoother transition
-        int r, g, b;
-        
-        // Simple HSV to RGB conversion without floating point
+void Rainbow_Effect_Single (int led_num, int speed) {
+	if (speed > 10) speed = 10;
+	if (speed < 1)	speed = 1;
+//	for (int r = 0; r <= 255; r+=10) {
+//		for (int g = 0; g <= 255; g+=10){
+//			for (int b = 0; b <= 255; b+=10) {
+//				Set_LED(1, r, g, b);
+//				Set_Brightness(100);
+//				WS2812_Send();
+//				HAL_Delay(10);
+//			}
+//		}
+//	}
+
+	//use HSV -> RGB method
+
+	// H (hue): 0 -> 360 (int)
+	// S (saturation): 0 -> 1 (float)
+	// V (value): 0 -> 1 (float)
+
+	//C (chroma) = VxS
+	//H' (hue prime) = H/60
+	//X = Cx(1-fabs(H%2-1))
+
+	//0 <= H' < 1: (C, X, 0)
+	//1 <= H' < 2: (X, C, 0)
+	//2 <= H' < 3: (0, C, X)
+	//3 <= H' < 4: (0, X, C)
+	//4 <= H' < 5: (X, 0, C)
+	//5 <= H' < 6: (C, 0, X)
+
+	for (int hue = 0; hue < 360; hue += 2) {
+		int red, green, blue;
+
         int sector = hue / 60;
         int remainder = hue % 60;
         
         switch(sector) {
-            case 0: r = 255; g = (remainder * 255) / 60; b = 0; break;
-            case 1: r = 255 - ((remainder * 255) / 60); g = 255; b = 0; break;
-            case 2: r = 0; g = 255; b = (remainder * 255) / 60; break;
-            case 3: r = 0; g = 255 - ((remainder * 255) / 60); b = 255; break;
-            case 4: r = (remainder * 255) / 60; g = 0; b = 255; break;
-            case 5: r = 255; g = 0; b = 255 - ((remainder * 255) / 60); break;
-            default: r = 255; g = 0; b = 0; break;
+            case 0: red = 255; green = (remainder * 255) / 60; blue = 0; break;
+            case 1: red = 255 - ((remainder * 255) / 60); green = 255; blue = 0; break;
+            case 2: red = 0; green = 255; blue = (remainder * 255) / 60; break;
+            case 3: red = 0; green = 255 - ((remainder * 255) / 60); blue = 255; break;
+            case 4: red = (remainder * 255) / 60; green = 0; blue = 255; break;
+            case 5: red = 255; green = 0; blue = 255 - ((remainder * 255) / 60); break;
+            default: red = 255; green = 0; blue = 0; break;
         }
-        
-        Set_All_LEDs_Same_Color(r, g, b);
-        Set_Brightness(100);
-        WS2812_Send();
-        HAL_Delay(50 / speed);
-    }
+
+		//Set_All_LEDs_Same_Color(red, green, blue);
+
+		Set_LED(led_num, red, green, blue);
+		Set_Brightness(100);
+		WS2812_Send();
+		HAL_Delay(LED_DELAY/speed);
+	}
+}
+
+void Rainbow_Effect (int speed) {
+	if (speed > 10) speed = 10;
+	if (speed < 1)	speed = 1;
+
+	for (int hue = 0; hue < 360; hue += 1) {
+		int red, green, blue;
+
+		for (int led_num = 0; led_num < MAX_LED; ++led_num) {
+			if (hue > 359) hue = 0;
+			hue += led_num;
+			int sector = hue / 60;
+			int remainder = hue % 60;
+
+			switch(sector) {
+				case 0: red = 255; green = (remainder * 255) / 60; blue = 0; break;
+				case 1: red = 255 - ((remainder * 255) / 60); green = 255; blue = 0; break;
+				case 2: red = 0; green = 255; blue = (remainder * 255) / 60; break;
+				case 3: red = 0; green = 255 - ((remainder * 255) / 60); blue = 255; break;
+				case 4: red = (remainder * 255) / 60; green = 0; blue = 255; break;
+				case 5: red = 255; green = 0; blue = 255 - ((remainder * 255) / 60); break;
+				default: red = 255; green = 0; blue = 0; break;
+			}
+
+			//Set_All_LEDs_Same_Color(red, green, blue);
+
+			Set_LED(led_num, red, green, blue);
+			HAL_Delay(1);
+		}
+
+		Set_Brightness(10);
+		WS2812_Send();
+		HAL_Delay(LED_DELAY/speed);
+	}
 }
 
 /* USER CODE END 0 */
@@ -265,7 +327,7 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 	  //Fade_Effect(255, 0, 0, 10);
-	  Rainbow_Effect(10);
+	  Rainbow_Effect(1);
   }
   /* USER CODE END 3 */
 }
