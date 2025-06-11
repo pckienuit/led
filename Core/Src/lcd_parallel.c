@@ -6,40 +6,43 @@ void LCD_Parallel_Init(void) {
     // Initialize GPIO pins
     LCD_Parallel_GPIO_Init();
     
-    // Wait for LCD to power up
-    HAL_Delay(50);
+    // Wait for LCD to power up completely
+    HAL_Delay(100);
     
-    // Initialize LCD in 4-bit mode
     // Set RS = 0 (command mode)
     HAL_GPIO_WritePin(LCD_RS_PORT, LCD_RS_PIN, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(LCD_E_PORT, LCD_E_PIN, GPIO_PIN_RESET);
     
-    // Send initial 8-bit commands for 4-bit mode setup
+    // Initialize LCD in 4-bit mode according to datasheet timing
+    // First: Send 0x3 three times to establish 8-bit communication
     LCD_Parallel_Write4Bits(0x03);
-    HAL_Delay(5);
+    HAL_Delay(10);  // Wait > 4.1ms
     
     LCD_Parallel_Write4Bits(0x03);
-    HAL_Delay(5);
+    HAL_Delay(5);   // Wait > 100us
     
     LCD_Parallel_Write4Bits(0x03);
-    HAL_Delay(1);
+    HAL_Delay(5);   // Wait > 100us
     
-    // Set 4-bit mode
+    // Switch to 4-bit mode
     LCD_Parallel_Write4Bits(0x02);
-    HAL_Delay(1);
+    HAL_Delay(5);
     
     // Function set: 4-bit, 2 line, 5x8 dots
     LCD_Parallel_SendCommand(LCD_FUNCTION_SET | LCD_4BITMODE | LCD_2LINE | LCD_5x8DOTS);
+    HAL_Delay(5);
     
     // Display control: display on, cursor off, blink off
     LCD_Parallel_SendCommand(LCD_DISPLAY_CONTROL | LCD_DISPLAY_ON | LCD_CURSOR_OFF | LCD_BLINK_OFF);
+    HAL_Delay(5);
     
     // Clear display
     LCD_Parallel_Clear();
+    HAL_Delay(5);
     
-    // Entry mode: left to right
+    // Entry mode: left to right, no shift
     LCD_Parallel_SendCommand(LCD_ENTRY_MODE_SET | LCD_ENTRY_LEFT | LCD_ENTRY_SHIFT_DECREMENT);
-    
-    HAL_Delay(1);
+    HAL_Delay(5);
 }
 
 void LCD_Parallel_GPIO_Init(void) {
@@ -139,9 +142,14 @@ void LCD_Parallel_Write4Bits(uint8_t data) {
 
 void LCD_Parallel_EnablePulse(void) {
     HAL_GPIO_WritePin(LCD_E_PORT, LCD_E_PIN, GPIO_PIN_SET);
-    HAL_Delay(1); // Enable pulse width
+    
+    // Enable pulse width (minimum 450ns, dùng loop delay)
+    for(volatile int i = 0; i < 50; i++);
+    
     HAL_GPIO_WritePin(LCD_E_PORT, LCD_E_PIN, GPIO_PIN_RESET);
-    HAL_Delay(1); // Commands need > 37us to settle
+    
+    // Commands need > 37us to settle  
+    for(volatile int i = 0; i < 1000; i++);
 }
 
 // Utility functions for displaying LED status
@@ -167,4 +175,44 @@ void LCD_Parallel_DisplayStatus(const char* color, int speed, int brightness) {
     for(int i = strlen(buffer); i < LCD_COLS; i++) {
         LCD_Parallel_PrintChar(' ');
     }
+}
+
+// Simple test function to check LCD functionality
+void LCD_Parallel_Test_Simple(void) {
+    // Test 1: Clear and basic text
+    LCD_Parallel_Clear();
+    HAL_Delay(500);
+    
+    LCD_Parallel_SetCursor(0, 0);
+    LCD_Parallel_Print("Test Line 1");
+    HAL_Delay(1000);
+    
+    LCD_Parallel_SetCursor(1, 0);
+    LCD_Parallel_Print("Test Line 2");
+    HAL_Delay(1000);
+    
+    // Test 2: Numbers and special characters
+    LCD_Parallel_Clear();
+    HAL_Delay(500);
+    
+    LCD_Parallel_SetCursor(0, 0);
+    LCD_Parallel_Print("0123456789ABCDEF");
+    HAL_Delay(1000);
+    
+    LCD_Parallel_SetCursor(1, 0);
+    LCD_Parallel_Print("!@#$%^&*()_+-=");
+    HAL_Delay(2000);
+    
+    // Test 3: Character by character
+    LCD_Parallel_Clear();
+    HAL_Delay(500);
+    
+    LCD_Parallel_SetCursor(0, 0);
+    char test_msg[] = "STM32 + LCD OK!";
+    for(int i = 0; i < strlen(test_msg); i++) {
+        LCD_Parallel_PrintChar(test_msg[i]);
+        HAL_Delay(200);
+    }
+    
+    HAL_Delay(2000);
 } 

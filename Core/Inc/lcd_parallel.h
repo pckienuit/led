@@ -82,4 +82,7 @@ void LCD_Parallel_GPIO_Init(void);
 void LCD_Parallel_DisplayEffect(const char* effect_name);
 void LCD_Parallel_DisplayStatus(const char* color, int speed, int brightness);
 
+// Test function for LCD troubleshooting
+void LCD_Parallel_Test_Simple(void);
+
 #endif /* LCD_PARALLEL_H */ 

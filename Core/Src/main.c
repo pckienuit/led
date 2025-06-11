@@ -42,13 +42,30 @@
 #define KEYPAD_ROWS 4
 #define KEYPAD_COLS 4
 
-// Effect states - Updated for 4 modes: fade, rainbow, run, flashing
+// Effect states - Updated for 5 modes: fade, rainbow, run, flashing, music
 #define EFFECT_FADE      0  // Fade effect
 #define EFFECT_RAINBOW   1  // Rainbow effect (no color change needed)
 #define EFFECT_RUN       2  // Pixel run effect  
 #define EFFECT_FLASHING  3  // Flashing effect
 #define EFFECT_OFF       4
-#define MAX_EFFECTS      5
+#define EFFECT_MUSIC     5  // Music reactive effect
+#define MAX_EFFECTS      6
+
+// GYMAX4466 Music Analyzer defines
+#define MUSIC_OUT1_PORT    GPIOC
+#define MUSIC_OUT1_PIN     GPIO_PIN_0
+#define MUSIC_OUT2_PORT    GPIOC  
+#define MUSIC_OUT2_PIN     GPIO_PIN_1
+#define MUSIC_OUT3_PORT    GPIOC
+#define MUSIC_OUT3_PIN     GPIO_PIN_2
+#define MUSIC_OUT4_PORT    GPIOC
+#define MUSIC_OUT4_PIN     GPIO_PIN_3
+#define MUSIC_OUT5_PORT    GPIOC
+#define MUSIC_OUT5_PIN     GPIO_PIN_4
+#define MUSIC_OUT6_PORT    GPIOC
+#define MUSIC_OUT6_PIN     GPIO_PIN_5
+#define MUSIC_OUT7_PORT    GPIOC
+#define MUSIC_OUT7_PIN     GPIO_PIN_6
 
 // Color definitions
 #define COLOR_BLUE   0  // Xanh dương
@@ -64,6 +81,22 @@ int color_values[MAX_COLORS][3] = {
     {255, 20, 147},   // Hồng
     {0, 255, 0}       // Xanh lá
 };
+
+// GYMAX4466 Sound Detection
+#define MUSIC_OUT_PORT     GPIOC
+#define MUSIC_OUT_PIN      GPIO_PIN_15
+
+// Music effect mode
+#define EFFECT_MUSIC       5  // Thêm vào sau EFFECT_OFF
+#define MAX_EFFECTS        6  // Tăng từ 5 lên 6
+
+// Music effect variables
+volatile int music_mode_active = 0;
+uint32_t last_music_update = 0;
+uint32_t last_sound_time = 0;
+uint8_t sound_active = 0;
+#define MUSIC_UPDATE_INTERVAL 50  // Update mỗi 50ms
+#define SOUND_TIMEOUT 200  // LED tắt sau 200ms khi không có âm thanh
 
 /* USER CODE END PD */
 
@@ -165,7 +198,7 @@ void Keypad_Init(void) {
 
 void Update_LCD_Display(void) {
     // Effect names
-    const char* effect_names[] = {"Fade", "Rainbow", "Run", "Flash", "Off"};
+    const char* effect_names[] = {"Fade", "Rainbow", "Run", "Flash", "Off", "Music"};
     const char* color_names[] = {"Blue", "Red", "Pink", "Green"};
 
     // Display current effect
@@ -263,6 +296,12 @@ void Process_Keypad_Input(char key) {
                 current_color = (current_color + 1) % MAX_COLORS;
                 lcd_update_needed = 1;
             }
+            break;
+        case 'E':  // S14 - Music mode
+            current_effect = EFFECT_MUSIC;
+            effect_changed = 1;
+            music_mode_active = 1;
+            lcd_update_needed = 1;
             break;
         case 'F':  // S15 - Turn off
             current_effect = EFFECT_OFF;
@@ -534,6 +573,154 @@ void LCD_Test(void) {
     HAL_Delay(2000);
 }
 
+// All LEDs off (effect OFF)
+void All_LEDs_Off(void) {
+    for(int i = 0; i < MAX_LED; i++) {
+        Set_LED(i, 0, 0, 0);
+    }
+    WS2812_Send();
+}
+
+// Read sound detection from GYMAX4466
+uint8_t Read_Sound_Detection(void) {
+    return HAL_GPIO_ReadPin(MUSIC_OUT_PORT, MUSIC_OUT_PIN);
+}
+
+// Music-reactive LED effect - Beat Detection Style
+void Music_Effect(void) {
+    uint8_t sound_detected = Read_Sound_Detection();
+    uint32_t current_time = HAL_GetTick();
+    
+    if(sound_detected) {
+        sound_active = 1;
+        last_sound_time = current_time;
+        
+        // Random color khi có beat
+        int red = (current_time % 256);
+        int green = ((current_time * 3) % 256);
+        int blue = ((current_time * 7) % 256);
+        
+        // Hiệu ứng flash toàn bộ strip
+        for(int i = 0; i < MAX_LED; i++) {
+            Set_LED(i, red, green, blue);
+        }
+    } else {
+        // Fade out nếu không còn âm thanh
+        if(current_time - last_sound_time > SOUND_TIMEOUT) {
+            sound_active = 0;
+            for(int i = 0; i < MAX_LED; i++) {
+                Set_LED(i, 0, 0, 0);
+            }
+        }
+    }
+    
+    Set_Brightness(current_brightness);
+    WS2812_Send();
+}
+
+// Music effect - VU Meter Style
+void Music_VU_Effect(void) {
+    uint8_t sound_detected = Read_Sound_Detection();
+    static int intensity_level = 0;
+    static uint32_t last_beat_time = 0;
+    uint32_t current_time = HAL_GetTick();
+    
+    if(sound_detected) {
+        // Tăng intensity khi có beat
+        if(current_time - last_beat_time > 100) {  // Debounce 100ms
+            intensity_level = (intensity_level < MAX_LED/2) ? intensity_level + 5 : MAX_LED/2;
+            last_beat_time = current_time;
+        }
+    } else {
+        // Giảm dần intensity
+        if(intensity_level > 0) {
+            intensity_level--;
+        }
+    }
+    
+    // VU meter từ giữa ra ngoài
+    int center = MAX_LED / 2;
+    
+    for(int i = 0; i < MAX_LED; i++) {
+        int distance_from_center = abs(i - center);
+        
+        if(distance_from_center < intensity_level) {
+            // Gradient màu theo khoảng cách
+            int red = (distance_from_center * 255) / (MAX_LED / 2);
+            int green = 255 - red;
+            int blue = intensity_level * 8;
+            
+            Set_LED(i, red, green, blue);
+        } else {
+            Set_LED(i, 0, 0, 0);
+        }
+    }
+    
+    Set_Brightness(current_brightness);
+    WS2812_Send();
+}
+
+// Debug function - Test GYMAX4466 GPIO
+void Debug_Music_GPIO(void) {
+    uint8_t gpio_state = HAL_GPIO_ReadPin(MUSIC_OUT_PORT, MUSIC_OUT_PIN);
+    
+    // Blink built-in LED (PC13) theo GPIO state
+    if(gpio_state) {
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);   // LED ON khi có signal
+    } else {
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET); // LED OFF khi không có signal
+    }
+}
+
+// Debug Music Mode - hiển thị thông tin trên LCD
+void Debug_Music_Mode(void) {
+    if(current_effect == EFFECT_MUSIC) {
+        uint8_t sound_detected = Read_Sound_Detection();
+        char debug_msg[17];
+        
+        // Line 1: Music mode status
+        LCD_Parallel_SetCursor(0, 0);
+        LCD_Parallel_Print("Music Mode ACTIVE");
+        
+        // Line 2: GPIO state và time
+        LCD_Parallel_SetCursor(1, 0);
+        snprintf(debug_msg, sizeof(debug_msg), "GPIO:%d T:%lu", 
+                sound_detected, (HAL_GetTick()/1000));
+        LCD_Parallel_Print(debug_msg);
+        
+        // Clear remaining chars
+        for(int i = strlen(debug_msg); i < LCD_COLS; i++) {
+            LCD_Parallel_PrintChar(' ');
+        }
+    }
+}
+
+// Test music mode với fake signal
+void Test_Music_Mode_Fake(void) {
+    // Simulate sound detection for testing
+    static uint32_t last_fake_beat = 0;
+    uint32_t current_time = HAL_GetTick();
+    
+    if(current_time - last_fake_beat > 500) {  // Fake beat every 500ms
+        // Flash all LEDs với random color
+        int red = (current_time % 256);
+        int green = ((current_time * 2) % 256);
+        int blue = ((current_time * 3) % 256);
+        
+        for(int i = 0; i < MAX_LED; i++) {
+            Set_LED(i, red, green, blue);
+        }
+        Set_Brightness(current_brightness);
+        WS2812_Send();
+        
+        last_fake_beat = current_time;
+        
+        // Blink built-in LED
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
+        HAL_Delay(50);
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
+    }
+}
 
 /* USER CODE END 0 */
 
@@ -576,9 +763,19 @@ int main(void)
   
   // Initialize LCD Parallel
   LCD_Parallel_Init();
+  
+  // Test LCD first
+  LCD_Parallel_Clear();
+  LCD_Parallel_SetCursor(0, 0);
+  LCD_Parallel_Print("STM32 LCD Test");
+  LCD_Parallel_SetCursor(1, 0);
+  LCD_Parallel_Print("Initializing...");
+  HAL_Delay(3000);  // Show test message for 3 seconds
+  
+  // Show welcome message
   LCD_Parallel_Clear();
   LCD_Parallel_DisplayEffect("LED Control");
-  HAL_Delay(2000);  // Show welcome message for 2 seconds
+  HAL_Delay(2000);
   
   // Turn off all LEDs initially
   Set_All_LEDs_Same_Color(0, 0, 0);
@@ -685,10 +882,7 @@ int main(void)
             break;
             
         case EFFECT_OFF:
-        default:
-            Set_All_LEDs_Same_Color(0, 0, 0);
-            Set_Brightness(0);
-            WS2812_Send();
+            All_LEDs_Off();
             HAL_Delay(100);
             
             // Check keypad when OFF
@@ -698,6 +892,36 @@ int main(void)
                 Update_LCD_Display();
                 last_lcd_update = HAL_GetTick();
             }
+            break;
+            
+        case EFFECT_MUSIC:
+            if(HAL_GetTick() - last_music_update > MUSIC_UPDATE_INTERVAL) {
+                // Debug: Show music status on LCD
+                Debug_Music_Mode();
+                
+                // Debug: Built-in LED follows GPIO state
+                Debug_Music_GPIO();
+                
+                // Main music effect
+                Music_Effect();         // Beat flash style
+                // Music_VU_Effect();   // VU meter style (uncomment để dùng)
+                // Test_Music_Mode_Fake(); // Fake test (uncomment để test không cần audio)
+                
+                last_music_update = HAL_GetTick();
+            }
+            
+            // Check keypad during music effect
+            char key_music = Keypad_Read();
+            if(key_music != 0) {
+                Process_Keypad_Input(key_music);
+                Update_LCD_Display();
+                last_lcd_update = HAL_GetTick();
+            }
+            break;
+            
+        default:
+            All_LEDs_Off();
+            HAL_Delay(100);
             break;
     }
 
@@ -863,6 +1087,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+  
+  /*Configure GPIO pin PC15 for GYMAX4466 sound detection */
+  GPIO_InitStruct.Pin = GPIO_PIN_15;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
