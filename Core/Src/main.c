@@ -53,9 +53,6 @@
 #define EFFECT_MUSIC     5  // Music reactive effect
 #define MAX_EFFECTS      6
 
-// Old GYMAX4466 defines (not used anymore - single OUT pin)
-// Kept for reference
-
 // Color definitions
 #define COLOR_BLUE   0  // Xanh dương
 #define COLOR_RED    1  // Đỏ
@@ -568,6 +565,7 @@ void All_LEDs_Off(void) {
 
 // Read sound detection from GYMAX4466
 uint8_t Read_Sound_Detection(void) {
+    // Bỏ hoàn toàn noise gate để phản ứng ngay lập tức
     return HAL_GPIO_ReadPin(MUSIC_OUT_PORT, MUSIC_OUT_PIN);
 }
 
@@ -575,37 +573,28 @@ uint8_t Read_Sound_Detection(void) {
 void Music_Effect(void) {
     uint8_t sound_detected = Read_Sound_Detection();
     uint32_t current_time = HAL_GetTick();
-    static uint32_t last_beat_trigger = 0;
-    static uint8_t debounce_counter = 0;
+    static uint32_t last_beat_time = 0;
     
-    // Debounce: Cần liên tục detect trong 3 lần
+    // Giảm thời gian chờ giữa các beat xuống 10ms
     if(sound_detected) {
-        debounce_counter++;
-        if(debounce_counter < 3) {
-            return; // Chưa đủ stable, bỏ qua
+        if(current_time - last_beat_time > 5) {
+            last_beat_time = current_time;
+            sound_active = 1;
+            last_sound_time = current_time;
+            
+            // Random color khi có beat
+            int red = (current_time % 256);
+            int green = ((current_time * 3) % 256);
+            int blue = ((current_time * 7) % 256);
+            
+            // Hiệu ứng flash toàn bộ strip
+            for(int i = 0; i < MAX_LED; i++) {
+                Set_LED(i, red, green, blue);
+            }
         }
     } else {
-        debounce_counter = 0;
-    }
-    
-    // Beat limiter: Chỉ trigger mỗi 150ms
-    if(sound_detected && (current_time - last_beat_trigger > 150)) {
-        sound_active = 1;
-        last_sound_time = current_time;
-        last_beat_trigger = current_time;
-        
-        // Random color khi có beat
-        int red = (current_time % 256);
-        int green = ((current_time * 3) % 256);
-        int blue = ((current_time * 7) % 256);
-        
-        // Hiệu ứng flash toàn bộ strip
-        for(int i = 0; i < MAX_LED; i++) {
-            Set_LED(i, red, green, blue);
-        }
-    } else {
-        // Fade out nếu không còn âm thanh
-        if(current_time - last_sound_time > SOUND_TIMEOUT) {
+        // Giảm thời gian fade out xuống 100ms
+        if(current_time - last_sound_time > 200) {
             sound_active = 0;
             for(int i = 0; i < MAX_LED; i++) {
                 Set_LED(i, 0, 0, 0);
