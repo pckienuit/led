@@ -54,18 +54,18 @@
 #define MAX_EFFECTS      6
 
 // Color definitions
-#define COLOR_BLUE   0  // Xanh dương
-#define COLOR_RED    1  // Đỏ
-#define COLOR_PINK   2  // Hồng  
-#define COLOR_GREEN  3  // Xanh lá
+#define COLOR_BLUE   0  // Blue
+#define COLOR_RED    1  // Red
+#define COLOR_PINK   2  // Pink  
+#define COLOR_GREEN  3  // Green
 #define MAX_COLORS   4
 
 // Color values [R, G, B]
 int color_values[MAX_COLORS][3] = {
-    {0, 100, 255},    // Xanh dương
-    {255, 0, 0},      // Đỏ
-    {255, 20, 147},   // Hồng
-    {0, 255, 0}       // Xanh lá
+    {0, 100, 255},    // Blue
+    {255, 0, 0},      // Red
+    {255, 20, 147},   // Pink
+    {0, 255, 0}       // Green
 };
 
 // GYMAX4466 Sound Detection
@@ -77,8 +77,8 @@ volatile int music_mode_active = 0;
 uint32_t last_music_update = 0;
 uint32_t last_sound_time = 0;
 uint8_t sound_active = 0;
-#define MUSIC_UPDATE_INTERVAL 50  // Update mỗi 50ms
-#define SOUND_TIMEOUT 200  // LED tắt sau 200ms khi không có âm thanh
+#define MUSIC_UPDATE_INTERVAL 50  // Update every 50ms
+#define SOUND_TIMEOUT 200        // LED turns off after 200ms without sound
 
 /* USER CODE END PD */
 
@@ -577,25 +577,25 @@ void Music_Effect(void) {
     uint32_t current_time = HAL_GetTick();
     static uint32_t last_beat_time = 0;
     
-    // Giảm thời gian chờ giữa các beat xuống 10ms
+    // Reduce wait time between beats to 5ms
     if(sound_detected) {
         if(current_time - last_beat_time > 5) {
             last_beat_time = current_time;
             sound_active = 1;
             last_sound_time = current_time;
             
-            // Random color khi có beat
+            // Random color on beat detection
             int red = (current_time % 256);
             int green = ((current_time * 3) % 256);
             int blue = ((current_time * 7) % 256);
             
-            // Hiệu ứng flash toàn bộ strip
+            // Flash effect on entire strip
             for(int i = 0; i < MAX_LED; i++) {
                 Set_LED(i, red, green, blue);
             }
         }
     } else {
-        // Giảm thời gian fade out xuống 100ms
+        // Turn off LEDs after 200ms timeout
         if(current_time - last_sound_time > 200) {
             sound_active = 0;
             for(int i = 0; i < MAX_LED; i++) {
@@ -712,7 +712,6 @@ void Test_Music_Mode_Fake(void) {
         HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
     }
 }
-
 /* USER CODE END 0 */
 
 /**
@@ -754,19 +753,6 @@ int main(void)
   
   // Initialize LCD Parallel
   LCD_Parallel_Init();
-  
-  // Test LCD first
-  LCD_Parallel_Clear();
-  LCD_Parallel_SetCursor(0, 0);
-  LCD_Parallel_Print("STM32 LCD Test");
-  LCD_Parallel_SetCursor(1, 0);
-  LCD_Parallel_Print("Initializing...");
-  HAL_Delay(3000);  // Show test message for 3 seconds
-  
-  // Show welcome message
-  LCD_Parallel_Clear();
-  LCD_Parallel_DisplayEffect("LED Control");
-  HAL_Delay(2000);
   
   // Turn off all LEDs initially
   Set_All_LEDs_Same_Color(0, 0, 0);
@@ -1132,3 +1118,4 @@ void assert_failed(uint8_t *file, uint32_t line)
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
+

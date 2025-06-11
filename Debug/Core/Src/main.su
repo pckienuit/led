@@ -20,9 +20,9 @@
 ../Core/Src/main.c:654:6:Debug_Music_GPIO	16	static
 ../Core/Src/main.c:666:6:Debug_Music_Mode	56	static
 ../Core/Src/main.c:690:6:Test_Music_Mode_Fake	32	static
-../Core/Src/main.c:722:5:main	32	static
-../Core/Src/main.c:936:6:SystemClock_Config	72	static
-../Core/Src/main.c:976:13:MX_TIM1_Init	96	static
-../Core/Src/main.c:1049:13:MX_DMA_Init	16	static
-../Core/Src/main.c:1067:13:MX_GPIO_Init	40	static
-../Core/Src/main.c:1108:6:Error_Handler	4	static,ignoring_inline_asm
+../Core/Src/main.c:721:5:main	32	static
+../Core/Src/main.c:922:6:SystemClock_Config	72	static
+../Core/Src/main.c:962:13:MX_TIM1_Init	96	static
+../Core/Src/main.c:1035:13:MX_DMA_Init	16	static
+../Core/Src/main.c:1053:13:MX_GPIO_Init	40	static
+../Core/Src/main.c:1094:6:Error_Handler	4	static,ignoring_inline_asm

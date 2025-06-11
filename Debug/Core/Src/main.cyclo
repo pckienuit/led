@@ -20,9 +20,9 @@
 ../Core/Src/main.c:654:6:Debug_Music_GPIO	2
 ../Core/Src/main.c:666:6:Debug_Music_Mode	3
 ../Core/Src/main.c:690:6:Test_Music_Mode_Fake	3
-../Core/Src/main.c:722:5:main	19
-../Core/Src/main.c:936:6:SystemClock_Config	3
-../Core/Src/main.c:976:13:MX_TIM1_Init	7
-../Core/Src/main.c:1049:13:MX_DMA_Init	1
-../Core/Src/main.c:1067:13:MX_GPIO_Init	1
-../Core/Src/main.c:1108:6:Error_Handler	1
+../Core/Src/main.c:721:5:main	19
+../Core/Src/main.c:922:6:SystemClock_Config	3
+../Core/Src/main.c:962:13:MX_TIM1_Init	7
+../Core/Src/main.c:1035:13:MX_DMA_Init	1
+../Core/Src/main.c:1053:13:MX_GPIO_Init	1
+../Core/Src/main.c:1094:6:Error_Handler	1
