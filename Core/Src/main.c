@@ -25,6 +25,8 @@
 #include "stdint.h"
 #include "stdlib.h"
 #include "lcd_parallel.h"
+#include <stdio.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -51,21 +53,8 @@
 #define EFFECT_MUSIC     5  // Music reactive effect
 #define MAX_EFFECTS      6
 
-// GYMAX4466 Music Analyzer defines
-#define MUSIC_OUT1_PORT    GPIOC
-#define MUSIC_OUT1_PIN     GPIO_PIN_0
-#define MUSIC_OUT2_PORT    GPIOC  
-#define MUSIC_OUT2_PIN     GPIO_PIN_1
-#define MUSIC_OUT3_PORT    GPIOC
-#define MUSIC_OUT3_PIN     GPIO_PIN_2
-#define MUSIC_OUT4_PORT    GPIOC
-#define MUSIC_OUT4_PIN     GPIO_PIN_3
-#define MUSIC_OUT5_PORT    GPIOC
-#define MUSIC_OUT5_PIN     GPIO_PIN_4
-#define MUSIC_OUT6_PORT    GPIOC
-#define MUSIC_OUT6_PIN     GPIO_PIN_5
-#define MUSIC_OUT7_PORT    GPIOC
-#define MUSIC_OUT7_PIN     GPIO_PIN_6
+// Old GYMAX4466 defines (not used anymore - single OUT pin)
+// Kept for reference
 
 // Color definitions
 #define COLOR_BLUE   0  // Xanh dương
@@ -85,10 +74,6 @@ int color_values[MAX_COLORS][3] = {
 // GYMAX4466 Sound Detection
 #define MUSIC_OUT_PORT     GPIOC
 #define MUSIC_OUT_PIN      GPIO_PIN_15
-
-// Music effect mode
-#define EFFECT_MUSIC       5  // Thêm vào sau EFFECT_OFF
-#define MAX_EFFECTS        6  // Tăng từ 5 lên 6
 
 // Music effect variables
 volatile int music_mode_active = 0;
@@ -586,14 +571,28 @@ uint8_t Read_Sound_Detection(void) {
     return HAL_GPIO_ReadPin(MUSIC_OUT_PORT, MUSIC_OUT_PIN);
 }
 
-// Music-reactive LED effect - Beat Detection Style
+// Music-reactive LED effect - Beat Detection Style với debounce
 void Music_Effect(void) {
     uint8_t sound_detected = Read_Sound_Detection();
     uint32_t current_time = HAL_GetTick();
+    static uint32_t last_beat_trigger = 0;
+    static uint8_t debounce_counter = 0;
     
+    // Debounce: Cần liên tục detect trong 3 lần
     if(sound_detected) {
+        debounce_counter++;
+        if(debounce_counter < 3) {
+            return; // Chưa đủ stable, bỏ qua
+        }
+    } else {
+        debounce_counter = 0;
+    }
+    
+    // Beat limiter: Chỉ trigger mỗi 150ms
+    if(sound_detected && (current_time - last_beat_trigger > 150)) {
         sound_active = 1;
         last_sound_time = current_time;
+        last_beat_trigger = current_time;
         
         // Random color khi có beat
         int red = (current_time % 256);
@@ -676,7 +675,7 @@ void Debug_Music_GPIO(void) {
 void Debug_Music_Mode(void) {
     if(current_effect == EFFECT_MUSIC) {
         uint8_t sound_detected = Read_Sound_Detection();
-        char debug_msg[17];
+        char debug_msg[20];
         
         // Line 1: Music mode status
         LCD_Parallel_SetCursor(0, 0);
@@ -689,7 +688,8 @@ void Debug_Music_Mode(void) {
         LCD_Parallel_Print(debug_msg);
         
         // Clear remaining chars
-        for(int i = strlen(debug_msg); i < LCD_COLS; i++) {
+        int msg_len = strlen(debug_msg);
+        for(int i = msg_len; i < LCD_COLS; i++) {
             LCD_Parallel_PrintChar(' ');
         }
     }
