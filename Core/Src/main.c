@@ -58,14 +58,24 @@
 #define COLOR_RED    1  // Red
 #define COLOR_PINK   2  // Pink  
 #define COLOR_GREEN  3  // Green
-#define MAX_COLORS   4
+#define COLOR_PURPLE 4  // Purple
+#define COLOR_YELLOW 5  // Yellow
+#define COLOR_CYAN   6  // Cyan
+#define COLOR_WHITE  7  // White
+#define COLOR_ORANGE 8  // Orange
+#define MAX_COLORS   9
 
 // Color values [R, G, B]
 int color_values[MAX_COLORS][3] = {
     {0, 100, 255},    // Blue
     {255, 0, 0},      // Red
     {255, 20, 147},   // Pink
-    {0, 255, 0}       // Green
+    {0, 255, 0},      // Green
+    {128, 0, 128},    // Purple
+    {255, 255, 0},    // Yellow
+    {0, 255, 255},    // Cyan
+    {255, 255, 255},  // White
+    {255, 165, 0}     // Orange
 };
 
 // GYMAX4466 Sound Detection
@@ -181,7 +191,7 @@ void Keypad_Init(void) {
 void Update_LCD_Display(void) {
     // Effect names
     const char* effect_names[] = {"Fade", "Rainbow", "Run", "Flash", "Off", "Music"};
-    const char* color_names[] = {"Blue", "Red", "Pink", "Green"};
+    const char* color_names[] = {"Blue", "Red", "Pink", "Green", "Purple", "Yellow", "Cyan", "White", "Orange"};
 
     // Display current effect
     if(current_effect < MAX_EFFECTS) {
