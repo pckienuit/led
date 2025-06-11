@@ -24,6 +24,7 @@
 #include "math.h"
 #include "stdint.h"
 #include "stdlib.h"
+#include "lcd_parallel.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -76,6 +77,11 @@ TIM_HandleTypeDef htim1;
 DMA_HandleTypeDef hdma_tim1_ch1;
 
 /* USER CODE BEGIN PV */
+
+// LCD display variables
+volatile int lcd_update_needed = 1;
+uint32_t last_lcd_update = 0;
+#define LCD_UPDATE_INTERVAL 500  // Update LCD every 500ms
 
 /* USER CODE END PV */
 
@@ -157,6 +163,26 @@ void Keypad_Init(void) {
     }
 }
 
+void Update_LCD_Display(void) {
+    // Effect names
+    const char* effect_names[] = {"Fade", "Rainbow", "Run", "Flash", "Off"};
+    const char* color_names[] = {"Blue", "Red", "Pink", "Green"};
+
+    // Display current effect
+    if(current_effect < MAX_EFFECTS) {
+        LCD_Parallel_DisplayEffect(effect_names[current_effect]);
+    }
+
+    // Display status (color, speed, brightness)
+    if(current_effect == EFFECT_RAINBOW) {
+        LCD_Parallel_DisplayStatus("Rainbow", current_speed, current_brightness);
+    } else if(current_effect == EFFECT_OFF) {
+        LCD_Parallel_DisplayStatus("OFF", 0, 0);
+    } else if(current_color < MAX_COLORS) {
+        LCD_Parallel_DisplayStatus(color_names[current_color], current_speed, current_brightness);
+    }
+}
+
 char Keypad_Read(void) {
     for(int row = 0; row < KEYPAD_ROWS; row++) {
         // Set current row LOW, others HIGH
@@ -191,47 +217,57 @@ void Process_Keypad_Input(char key) {
         case '1':  // S1 - Fade effect
             current_effect = EFFECT_FADE;
             effect_changed = 1;
+            lcd_update_needed = 1;
             break;
         case '5':  // S5 - Rainbow effect  
             current_effect = EFFECT_RAINBOW;
             effect_changed = 1;
+            lcd_update_needed = 1;
             break;
         case '9':  // S9 - Run effect
             current_effect = EFFECT_RUN;
             effect_changed = 1;
+            lcd_update_needed = 1;
             break;
         case 'D':  // S13 - Flashing effect
             current_effect = EFFECT_FLASHING;
             effect_changed = 1;
+            lcd_update_needed = 1;
             break;
             
         // Speed control
         case '2':  // S2 - Decrease speed
             if(current_speed > 1) current_speed--;
+            lcd_update_needed = 1;
             break;
         case '3':  // S3 - Increase speed
             if(current_speed < 10) current_speed++;
+            lcd_update_needed = 1;
             break;
             
         // Brightness control
         case '6':  // S6 - Decrease brightness
             current_brightness -= 10;
             if(current_brightness < 1) current_brightness = 1;
+            lcd_update_needed = 1;
             break;
         case '7':  // S7 - Increase brightness
             current_brightness += 10;
             if(current_brightness > 100) current_brightness = 100;
+            lcd_update_needed = 1;
             break;
             
         // Color and control
         case 'A':  // S10 - Change color (not for Rainbow)
             if(current_effect != EFFECT_RAINBOW) {
                 current_color = (current_color + 1) % MAX_COLORS;
+                lcd_update_needed = 1;
             }
             break;
         case 'F':  // S15 - Turn off
             current_effect = EFFECT_OFF;
             effect_changed = 1;
+            lcd_update_needed = 1;
             break;
         
         // Disabled problematic buttons
@@ -444,6 +480,13 @@ void Rainbow_Effect (int speed) {
 		Set_Brightness(current_brightness);
 		WS2812_Send();
 		HAL_Delay(LED_DELAY/speed);
+		
+		// Check keypad during rainbow effect
+		char key_rainbow = Keypad_Read();
+		if(key_rainbow != 0) {
+			Process_Keypad_Input(key_rainbow);
+			Update_LCD_Display();
+		}
 	}
 }
 
@@ -458,6 +501,13 @@ void Pixel_Run_Effect (int speed, int red, int green, int blue) {
 		Set_Brightness(current_brightness);
 		WS2812_Send();
 		HAL_Delay((LED_DELAY*3)/speed);
+		
+		// Check keypad during run effect
+		char key_run = Keypad_Read();
+		if(key_run != 0) {
+			Process_Keypad_Input(key_run);
+			Update_LCD_Display();
+		}
 	}
 }
 
@@ -473,6 +523,17 @@ void Flashing_Effect (int speed, int red, int green, int blue) {
 	WS2812_Send();
 	HAL_Delay((LED_DELAY*15)/speed);
 }
+
+// Test LCD function - để kiểm tra kết nối
+void LCD_Test(void) {
+    LCD_Parallel_Clear();
+    LCD_Parallel_SetCursor(0, 0);
+    LCD_Parallel_Print("Hello STM32!");
+    LCD_Parallel_SetCursor(1, 0);
+    LCD_Parallel_Print("LCD Working!");
+    HAL_Delay(2000);
+}
+
 
 /* USER CODE END 0 */
 
@@ -513,10 +574,19 @@ int main(void)
   // Initialize keypad
   Keypad_Init();
   
+  // Initialize LCD Parallel
+  LCD_Parallel_Init();
+  LCD_Parallel_Clear();
+  LCD_Parallel_DisplayEffect("LED Control");
+  HAL_Delay(2000);  // Show welcome message for 2 seconds
+  
   // Turn off all LEDs initially
   Set_All_LEDs_Same_Color(0, 0, 0);
   Set_Brightness(0);
   WS2812_Send();
+  
+  // Update LCD with initial status
+  Update_LCD_Display();
   
   /* USER CODE END 2 */
 
@@ -528,6 +598,15 @@ int main(void)
     char key = Keypad_Read();
     if(key != 0) {
         Process_Keypad_Input(key);
+        // Update LCD immediately when key is pressed
+        Update_LCD_Display();
+        last_lcd_update = HAL_GetTick();
+    }
+    
+    // Update LCD display periodically (independent of LED effects)
+    if(HAL_GetTick() - last_lcd_update > LCD_UPDATE_INTERVAL) {
+        Update_LCD_Display();
+        last_lcd_update = HAL_GetTick();
     }
     
     // Run current effect based on state
@@ -541,11 +620,27 @@ int main(void)
                 Set_Brightness(brightness);
                 WS2812_Send();
                 HAL_Delay((LED_DELAY * 5) / current_speed);
+                
+                // Check keypad during effect
+                char key_during_effect = Keypad_Read();
+                if(key_during_effect != 0) {
+                    Process_Keypad_Input(key_during_effect);
+                    Update_LCD_Display();
+                    last_lcd_update = HAL_GetTick();
+                }
             }
             for (int brightness = current_brightness; brightness >= 0; brightness -= 2) {
                 Set_Brightness(brightness);
                 WS2812_Send();
                 HAL_Delay((LED_DELAY * 5) / current_speed);
+                
+                // Check keypad during effect
+                char key_during_effect = Keypad_Read();
+                if(key_during_effect != 0) {
+                    Process_Keypad_Input(key_during_effect);
+                    Update_LCD_Display();
+                    last_lcd_update = HAL_GetTick();
+                }
             }
             break;
             
@@ -567,9 +662,26 @@ int main(void)
             Set_Brightness(current_brightness);
             WS2812_Send();
             HAL_Delay((LED_DELAY * 30) / current_speed);
+            
+            // Check keypad during flash ON
+            char key_flash_on = Keypad_Read();
+            if(key_flash_on != 0) {
+                Process_Keypad_Input(key_flash_on);
+                Update_LCD_Display();
+                last_lcd_update = HAL_GetTick();
+            }
+            
             Set_Brightness(0);
             WS2812_Send();
             HAL_Delay((LED_DELAY * 30) / current_speed);
+            
+            // Check keypad during flash OFF
+            char key_flash_off = Keypad_Read();
+            if(key_flash_off != 0) {
+                Process_Keypad_Input(key_flash_off);
+                Update_LCD_Display();
+                last_lcd_update = HAL_GetTick();
+            }
             break;
             
         case EFFECT_OFF:
@@ -578,6 +690,14 @@ int main(void)
             Set_Brightness(0);
             WS2812_Send();
             HAL_Delay(100);
+            
+            // Check keypad when OFF
+            char key_off = Keypad_Read();
+            if(key_off != 0) {
+                Process_Keypad_Input(key_off);
+                Update_LCD_Display();
+                last_lcd_update = HAL_GetTick();
+            }
             break;
     }
 
