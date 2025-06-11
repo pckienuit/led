@@ -557,9 +557,11 @@ void LCD_Test(void) {
 
 // All LEDs off (effect OFF)
 void All_LEDs_Off(void) {
+    // Tắt tất cả LED và đặt độ sáng về 0
     for(int i = 0; i < MAX_LED; i++) {
         Set_LED(i, 0, 0, 0);
     }
+    Set_Brightness(0);
     WS2812_Send();
 }
 
@@ -871,16 +873,22 @@ int main(void)
             break;
             
         case EFFECT_OFF:
-            All_LEDs_Off();
-            HAL_Delay(100);
+            // Đảm bảo tắt hoàn toàn LED khi vào mode OFF
+            if(effect_changed) {
+                All_LEDs_Off();
+                effect_changed = 0;
+            }
             
-            // Check keypad when OFF
+            // Kiểm tra keypad
             char key_off = Keypad_Read();
             if(key_off != 0) {
                 Process_Keypad_Input(key_off);
                 Update_LCD_Display();
                 last_lcd_update = HAL_GetTick();
             }
+            
+            // Đảm bảo LED vẫn tắt trong mode OFF
+            Set_Brightness(0);
             break;
             
         case EFFECT_MUSIC:
