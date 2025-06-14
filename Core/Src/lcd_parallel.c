@@ -143,7 +143,7 @@ void LCD_Parallel_Write4Bits(uint8_t data) {
 void LCD_Parallel_EnablePulse(void) {
     HAL_GPIO_WritePin(LCD_E_PORT, LCD_E_PIN, GPIO_PIN_SET);
     
-    // Enable pulse width (minimum 450ns, dùng loop delay)
+    // Enable pulse width (minimum 450ns, loop delay)
     for(volatile int i = 0; i < 50; i++);
     
     HAL_GPIO_WritePin(LCD_E_PORT, LCD_E_PIN, GPIO_PIN_RESET);
