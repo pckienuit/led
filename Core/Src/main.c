@@ -82,6 +82,16 @@ int color_values[MAX_COLORS][3] = {
 #define MUSIC_OUT_PORT     GPIOC
 #define MUSIC_OUT_PIN      GPIO_PIN_15
 
+// Thêm vào phần khai báo biến toàn cục
+#define BASE_FREQ 200
+#define MAX_FREQ 2000
+
+// Thêm vào phần định nghĩa #define
+#define FREQ_COLUMNS 10  // 10 cột LED
+#define FREQ_MIN 200
+#define FREQ_MAX 2000
+#define FREQ_STEP ((FREQ_MAX - FREQ_MIN) / FREQ_COLUMNS)  // 180Hz mỗi cột
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -101,6 +111,29 @@ uint32_t var = 0;
 volatile int lcd_update_needed = 1;
 uint32_t last_lcd_update = 0;
 #define LCD_UPDATE_INTERVAL 500  // Update LCD every 500ms
+
+// Khai báo biến toàn cục
+volatile int mn = 5000, mx = 0, avg = 0, cnt = 0;
+
+// Khai báo prototype của hàm
+void reset_sound_stats(void);
+
+int calculate_frequency(int adc_value) {
+    if (adc_value < 1700) return 0;  // Dưới ngưỡng phát hiện
+    if (adc_value > 4000) return 0;  // Trên ngưỡng đo
+
+    // Công thức tính tần số dựa trên ADC value
+    // Dựa vào pattern: ADC value tăng theo log của tần số
+    // Công thức: f = BASE_FREQ * (1 + k * log(ADC/BASE_ADC))
+    float normalized_value = (float)(adc_value - 1700) / (4000 - 1700);
+    int estimated_freq = BASE_FREQ + (int)(normalized_value * 1800); // 1800 = 2000 - 200
+
+    // Giới hạn tần số trong khoảng hợp lệ
+    if (estimated_freq < BASE_FREQ) estimated_freq = BASE_FREQ;
+    if (estimated_freq > MAX_FREQ) estimated_freq = MAX_FREQ;
+
+    return estimated_freq;
+}
 
 /* USER CODE END PV */
 
@@ -253,16 +286,16 @@ char Keypad_Read(void) {
             }
         }
 
-        HAL_Delay(2);
+        HAL_Delay(1); // Giảm delay xuống 1ms
 
         // Read columns
         for(int col = 0; col < KEYPAD_COLS; col++) {
             if(HAL_GPIO_ReadPin(keypad_col_ports[col], keypad_col_pins[col]) == GPIO_PIN_RESET) {
                 // Button pressed, wait for release
                 while(HAL_GPIO_ReadPin(keypad_col_ports[col], keypad_col_pins[col]) == GPIO_PIN_RESET) {
-                    HAL_Delay(10);
+                    HAL_Delay(5); // Giảm delay xuống 5ms
                 }
-                HAL_Delay(50); // Debounce delay
+                HAL_Delay(20); // Giảm debounce delay xuống 20ms
                 return keypad_layout[row][col];
             }
         }
@@ -329,9 +362,8 @@ void Process_Keypad_Input(char key) {
            // music_mode_active = 1;
             lcd_update_needed = 1;
             break;
-        case 'F':  // S15 - Turn off
-            current_effect = EFFECT_OFF;
-            effect_changed = 1;
+        case 'F':  // S15 - Reset stats
+            reset_sound_stats();
             lcd_update_needed = 1;
             break;
 
@@ -639,41 +671,6 @@ void All_LEDs_Off(void) {
     WS2812_Send();
 }
 
-// Function to generate random color based on HAL_GetTick
-void get_random_color(uint8_t* red, uint8_t* green, uint8_t* blue) {
-    uint32_t tick = HAL_GetTick();
-    // Use different parts of the tick for RGB
-    *red = (tick >> 8) & 0xFF;
-    *green = (tick >> 16) & 0xFF;
-    *blue = tick & 0xFF;
-}
-
-// Function to convert HSV to RGB
-void hsv_to_rgb(float h, float s, float v, uint8_t* r, uint8_t* g, uint8_t* b) {
-    float c = v * s;
-    float x = c * (1 - fabs(fmod(h / 60.0, 2) - 1));
-    float m = v - c;
-    
-    float r1, g1, b1;
-    if (h >= 0 && h < 60) {
-        r1 = c; g1 = x; b1 = 0;
-    } else if (h >= 60 && h < 120) {
-        r1 = x; g1 = c; b1 = 0;
-    } else if (h >= 120 && h < 180) {
-        r1 = 0; g1 = c; b1 = x;
-    } else if (h >= 180 && h < 240) {
-        r1 = 0; g1 = x; b1 = c;
-    } else if (h >= 240 && h < 300) {
-        r1 = x; g1 = 0; b1 = c;
-    } else {
-        r1 = c; g1 = 0; b1 = x;
-    }
-    
-    *r = (uint8_t)((r1 + m) * 255);
-    *g = (uint8_t)((g1 + m) * 255);
-    *b = (uint8_t)((b1 + m) * 255);
-}
-
 // Function to get temperature-based color (blue to red)
 void get_temperature_color(float intensity, uint8_t* r, uint8_t* g, uint8_t* b) {
     // Map intensity (0-255) to temperature color
@@ -723,24 +720,25 @@ int is_valid_position(int row, int col, int* lit_positions, int num_lit) {
 }
 
 // Function to control LED based on sound frequency with random flashing effect
+#define SILENT_VALUE 700
+#define SR_UPDATE_RATE 10
 void Sound_Reactive_LED(uint32_t sound_value) {
     static uint32_t last_update = 0;
     static int lit_positions[30];  // Store positions of lit LEDs
     static int num_lit = 0;
     
-    // Ignore sound below 400
-    if (sound_value < 650) {
+    if (sound_value < SILENT_VALUE) {
         Set_All_LEDs_Same_Color(0, 0, 0);
         Set_Brightness(current_brightness);
         WS2812_Send();
         return;
     }
     
-    // Map sound value to LED intensity (400-4095 to 0-255)
-    uint8_t intensity = ((sound_value - 650) * 255) / (4095 - 400);
+    // Map sound value to LED intensity (700-4095 to 0-255)
+    uint8_t intensity = ((sound_value - SILENT_VALUE) * 255) / (4095 - SILENT_VALUE);
     
-    // Update effect every 50ms
-    if (HAL_GetTick() - last_update > 10) {
+    // Update effect every 10ms
+    if (HAL_GetTick() - last_update > SR_UPDATE_RATE) {
         last_update = HAL_GetTick();
         
         // Calculate number of LEDs to light based on intensity
@@ -748,10 +746,8 @@ void Sound_Reactive_LED(uint32_t sound_value) {
         if (num_leds < 1) num_leds = 1;
         if (num_leds > 15) num_leds = 15;
         
-        // Clear all LEDs
         Set_All_LEDs_Same_Color(0, 0, 0);
         
-        // Reset lit positions
         num_lit = 0;
         
         // Try to light up new LEDs
@@ -765,7 +761,7 @@ void Sound_Reactive_LED(uint32_t sound_value) {
             
             // Check if position is valid
             if (is_valid_position(row, col, lit_positions, num_lit)) {
-                // Store position
+
                 lit_positions[num_lit] = row * 10 + col;
                 num_lit++;
                 
@@ -773,13 +769,117 @@ void Sound_Reactive_LED(uint32_t sound_value) {
                 uint8_t r, g, b;
                 get_temperature_color(intensity, &r, &g, &b);
                 
-                // Light up the LED
                 Set_LED_Matrix(row, col, r, g, b);
             }
         }
     }
     
-    // Apply brightness
+    Set_Brightness(current_brightness);
+    WS2812_Send();
+}
+
+void reset_sound_stats(void) {
+    mn = 5000;  // Reset min về giá trị cao
+    mx = 0;     // Reset max về 0
+    avg = 0;    // Reset average về 0
+    cnt = 0;    // Reset counter về 0
+}
+
+// Hàm để xác định cột LED dựa trên tần số
+int get_frequency_column(int freq) {
+    if (freq < FREQ_MIN) return -1;
+    if (freq > FREQ_MAX) return -1;
+    
+    return (freq - FREQ_MIN) / FREQ_STEP;
+}
+
+// Hàm lấy màu dựa trên cột
+void get_frequency_color(int freq, float intensity, uint8_t* r, uint8_t* g, uint8_t* b) {
+    int column = get_frequency_column(freq);
+    if (column < 0) column = 0;
+    if (column >= FREQ_COLUMNS) column = FREQ_COLUMNS - 1;
+    
+    // Chuyển đổi từ xanh dương -> xanh lá -> vàng -> cam -> đỏ
+    switch(column) {
+        case 0: // Xanh dương đậm
+            *r = 0;
+            *g = 0;
+            *b = (uint8_t)(intensity * 255);
+            break;
+        case 1: // Xanh dương nhạt
+            *r = 0;
+            *g = (uint8_t)(intensity * 100);
+            *b = (uint8_t)(intensity * 255);
+            break;
+        case 2: // Xanh lá nhạt
+            *r = 0;
+            *g = (uint8_t)(intensity * 255);
+            *b = (uint8_t)(intensity * 100);
+            break;
+        case 3: // Xanh lá đậm
+            *r = 0;
+            *g = (uint8_t)(intensity * 255);
+            *b = 0;
+            break;
+        case 4: // Xanh lá - vàng
+            *r = (uint8_t)(intensity * 100);
+            *g = (uint8_t)(intensity * 255);
+            *b = 0;
+            break;
+        case 5: // Vàng
+            *r = (uint8_t)(intensity * 255);
+            *g = (uint8_t)(intensity * 255);
+            *b = 0;
+            break;
+        case 6: // Cam nhạt
+            *r = (uint8_t)(intensity * 255);
+            *g = (uint8_t)(intensity * 180);
+            *b = 0;
+            break;
+        case 7: // Cam đậm
+            *r = (uint8_t)(intensity * 255);
+            *g = (uint8_t)(intensity * 100);
+            *b = 0;
+            break;
+        case 8: // Đỏ cam
+            *r = (uint8_t)(intensity * 255);
+            *g = (uint8_t)(intensity * 50);
+            *b = 0;
+            break;
+        case 9: // Đỏ
+            *r = (uint8_t)(intensity * 255);
+            *g = 0;
+            *b = 0;
+            break;
+    }
+}
+
+// Hàm hiệu ứng nháy theo tần số
+void Frequency_Column_Effect(int adc_value) {
+    int freq = calculate_frequency(adc_value);
+    int column = get_frequency_column(freq);
+    
+    // Tắt tất cả LED
+    Set_All_LEDs_Same_Color(0, 0, 0);
+    
+    if (column >= 0 && column < FREQ_COLUMNS) {
+        // Tính cường độ dựa trên giá trị ADC
+        float intensity = (float)(adc_value - 1700) / (4000 - 1700);
+        if (intensity < 0) intensity = 0;
+        if (intensity > 1) intensity = 1;
+        
+        // Tính số cột cần sáng dựa trên cường độ
+        int num_columns = (int)(intensity * FREQ_COLUMNS);
+        if (num_columns < 1) num_columns = 1;
+        
+        // Sáng các cột từ 0 đến num_columns
+        for (int i = 0; i < num_columns; i++) {
+            uint8_t r, g, b;
+            get_frequency_color(FREQ_MIN + i * FREQ_STEP, 1.0, &r, &g, &b);
+            Set_LED_Col(i, r, g, b);
+        }
+    }
+    
     Set_Brightness(current_brightness);
     WS2812_Send();
 }
@@ -824,21 +924,22 @@ int main(void)
 
   // Initialize LCD Parallel
   LCD_Parallel_Init();
+  LCD_Parallel_Clear();
+  //LCD_Parallel_DisplayOn();
+  //LCD_Parallel_CursorOn();
 
   // Turn off all LEDs initially
   Set_All_LEDs_Same_Color(0, 0, 0);
   Set_Brightness(0);
   WS2812_Send();
 
-
-  // Update LCD with initial status
-  //Update_LCD_Display();
+  // Reset sound stats
+  reset_sound_stats();
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  int mn = 5000, mx = 0, avg = 0, cnt = 0;
   while (1)
   {
     /* USER CODE END WHILE */
@@ -847,28 +948,41 @@ int main(void)
     var = HAL_ADC_GetValue(&hadc1);
 
     if (var > mx) mx = var;
-    if (var < mn) mn = var;
+    if (var < mn && var > SILENT_VALUE && calculate_frequency(var) > 0) mn = var;
     avg += var;
     cnt++;
 
-    // Call the sound reactive LED function
-    Sound_Reactive_LED(var);
+    // Khai báo biến chuỗi
+    char t[20], mnt[10], mxt[10], freqt[10];
+    int freq = calculate_frequency(var);
 
-    char t[20], mnt[10], mxt[10], avgt[10];
-    LCD_Parallel_SetCursor(0, 0);
-    LCD_Parallel_Print(int_to_string(var, t));
+    Frequency_Column_Effect(var);
 
-    LCD_Parallel_SetCursor(1, 0);
-    LCD_Parallel_Print(int_to_string(mn, mnt));
-
-    LCD_Parallel_SetCursor(1, 5);
-    LCD_Parallel_Print(int_to_string(mx, mxt));
-
-    LCD_Parallel_SetCursor(0, 5);
-    LCD_Parallel_Print(int_to_string(avg/cnt, avgt));
-
+    // Hiển thị thông tin LCD
     LCD_Parallel_Clear();
+    
+    // Dòng 1: Hiển thị giá trị ADC và tần số
+    LCD_Parallel_SetCursor(0, 0);
+    LCD_Parallel_Print("ADC:");
+    LCD_Parallel_Print(int_to_string(var, t));
+    
+    LCD_Parallel_SetCursor(0, 8);
+    LCD_Parallel_Print("Hz:");
+    LCD_Parallel_Print(int_to_string(freq, freqt));
 
+    // Dòng 2: Hiển thị giá trị min và max
+    LCD_Parallel_SetCursor(1, 0);
+    LCD_Parallel_Print("Min:");
+    if(mn != 5000)
+        LCD_Parallel_Print(int_to_string(calculate_frequency(mn), mnt));
+    else
+        LCD_Parallel_Print("NaN");
+    
+    LCD_Parallel_SetCursor(1, 8);
+    LCD_Parallel_Print("Max:");
+    LCD_Parallel_Print(int_to_string(calculate_frequency(mx), mxt));
+
+    //HAL_Delay(100);
     HAL_ADC_Stop(&hadc1);
     /* USER CODE BEGIN 3 */
   }
