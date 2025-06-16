@@ -82,14 +82,6 @@ int color_values[MAX_COLORS][3] = {
 #define MUSIC_OUT_PORT     GPIOC
 #define MUSIC_OUT_PIN      GPIO_PIN_15
 
-// Music effect variables
-volatile int music_mode_active = 0;
-uint32_t last_music_update = 0;
-uint32_t last_sound_time = 0;
-uint8_t sound_active = 0;
-#define MUSIC_UPDATE_INTERVAL 50  // Update every 50ms
-#define SOUND_TIMEOUT 200        // LED turns off after 200ms without sound
-
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -98,11 +90,13 @@ uint8_t sound_active = 0;
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+
 TIM_HandleTypeDef htim1;
 DMA_HandleTypeDef hdma_tim1_ch1;
 
 /* USER CODE BEGIN PV */
-
+uint32_t var = 0;
 // LCD display variables
 volatile int lcd_update_needed = 1;
 uint32_t last_lcd_update = 0;
@@ -115,12 +109,58 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_TIM1_Init(void);
+static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+// Function to convert integer to string
+char* int_to_string(int num, char* str) {
+    int i = 0;
+    int is_negative = 0;
+    
+    // Handle negative numbers
+    if (num < 0) {
+        is_negative = 1;
+        num = -num;
+    }
+    
+    // Handle zero
+    if (num == 0) {
+        str[i++] = '0';
+        str[i] = '\0';
+        return str;
+    }
+    
+    // Convert number to string in reverse order
+    while (num > 0) {
+        str[i++] = num % 10 + '0';
+        num = num / 10;
+    }
+    
+    // Add negative sign if needed
+    if (is_negative) {
+        str[i++] = '-';
+    }
+    
+    // Reverse the string
+    int start = 0;
+    int end = i - 1;
+    while (start < end) {
+        char temp = str[start];
+        str[start] = str[end];
+        str[end] = temp;
+        start++;
+        end--;
+    }
+    
+    // Add null terminator
+    str[i] = '\0';
+    return str;
+}
 
 uint8_t LED_Data[MAX_LED][4];
 uint8_t LED_Mod[MAX_LED][4];
@@ -286,7 +326,7 @@ void Process_Keypad_Input(char key) {
         case 'E':  // S14 - Music mode
             current_effect = EFFECT_MUSIC;
             effect_changed = 1;
-            music_mode_active = 1;
+           // music_mode_active = 1;
             lcd_update_needed = 1;
             break;
         case 'F':  // S15 - Turn off
@@ -351,8 +391,6 @@ void Set_LED_Matrix (int row, int col, int Red, int Green, int Blue) {
 	};
 	Set_LED(LED_Matrix[row][col], Red, Green, Blue);
 }
-
-#define PI 3.14159265
 
 void Set_Brightness (int brightness) {
 #if USE_BRIGHTNESS
@@ -601,110 +639,151 @@ void All_LEDs_Off(void) {
     WS2812_Send();
 }
 
-// Read sound detection from GYMAX4466
-uint8_t Read_Sound_Detection(void) {
-    return HAL_GPIO_ReadPin(MUSIC_OUT_PORT, MUSIC_OUT_PIN);
+// Function to generate random color based on HAL_GetTick
+void get_random_color(uint8_t* red, uint8_t* green, uint8_t* blue) {
+    uint32_t tick = HAL_GetTick();
+    // Use different parts of the tick for RGB
+    *red = (tick >> 8) & 0xFF;
+    *green = (tick >> 16) & 0xFF;
+    *blue = tick & 0xFF;
 }
 
-// Music-reactive LED effect - Beat Detection Style với debounce
-void Music_Effect(void) {
-    uint8_t sound_detected = Read_Sound_Detection();
-    uint32_t current_time = HAL_GetTick();
-    static uint32_t last_beat_time = 0;
-
-    // Reduce wait time between beats to 5ms
-    if(sound_detected) {
-        if(current_time - last_beat_time > 5) {
-            last_beat_time = current_time;
-            sound_active = 1;
-            last_sound_time = current_time;
-
-            // Random color
-            int red = (current_time % 256);
-            int green = ((current_time * 3) % 256);
-            int blue = ((current_time * 7) % 256);
-
-            // Apply effect on entire strip
-            for(int i = 0; i < MAX_LED; i++) {
-                Set_LED(i, red, green, blue);
-            }
-        }
+// Function to convert HSV to RGB
+void hsv_to_rgb(float h, float s, float v, uint8_t* r, uint8_t* g, uint8_t* b) {
+    float c = v * s;
+    float x = c * (1 - fabs(fmod(h / 60.0, 2) - 1));
+    float m = v - c;
+    
+    float r1, g1, b1;
+    if (h >= 0 && h < 60) {
+        r1 = c; g1 = x; b1 = 0;
+    } else if (h >= 60 && h < 120) {
+        r1 = x; g1 = c; b1 = 0;
+    } else if (h >= 120 && h < 180) {
+        r1 = 0; g1 = c; b1 = x;
+    } else if (h >= 180 && h < 240) {
+        r1 = 0; g1 = x; b1 = c;
+    } else if (h >= 240 && h < 300) {
+        r1 = x; g1 = 0; b1 = c;
     } else {
-        // Turn off LEDs after 200ms timeout
-        if(current_time - last_sound_time > 200) {
-            sound_active = 0;
-            for(int i = 0; i < MAX_LED; i++) {
-                Set_LED(i, 0, 0, 0);
+        r1 = c; g1 = 0; b1 = x;
+    }
+    
+    *r = (uint8_t)((r1 + m) * 255);
+    *g = (uint8_t)((g1 + m) * 255);
+    *b = (uint8_t)((b1 + m) * 255);
+}
+
+// Function to get temperature-based color (blue to red)
+void get_temperature_color(float intensity, uint8_t* r, uint8_t* g, uint8_t* b) {
+    // Map intensity (0-255) to temperature color
+    // Blue (cold) -> Cyan -> Green -> Yellow -> Red (hot)
+    if (intensity < 51) {  // 0-50: Blue to Cyan
+        *r = 0;
+        *g = intensity * 5;
+        *b = 255;
+    } else if (intensity < 102) {  // 51-101: Cyan to Green
+        *r = 0;
+        *g = 255;
+        *b = 255 - (intensity - 51) * 5;
+    } else if (intensity < 153) {  // 102-152: Green to Yellow
+        *r = (intensity - 102) * 5;
+        *g = 255;
+        *b = 0;
+    } else if (intensity < 204) {  // 153-203: Yellow to Orange
+        *r = 255;
+        *g = 255 - (intensity - 153) * 5;
+        *b = 0;
+    } else {  // 204-255: Orange to Red
+        *r = 255;
+        *g = 0;
+        *b = 0;
+    }
+}
+
+// Function to check if a position is valid and not adjacent to any lit LED
+int is_valid_position(int row, int col, int* lit_positions, int num_lit) {
+    // Check if position is within bounds
+    if (row < 0 || row >= 3 || col < 0 || col >= 10) {
+        return 0;
+    }
+    
+    // Check if position is adjacent to any lit LED
+    for (int i = 0; i < num_lit; i++) {
+        int lit_row = lit_positions[i] / 10;
+        int lit_col = lit_positions[i] % 10;
+        
+        // Check if positions are adjacent (including diagonals)
+        if (abs(row - lit_row) <= 1 && abs(col - lit_col) <= 1) {
+            return 0;
+        }
+    }
+    
+    return 1;
+}
+
+// Function to control LED based on sound frequency with random flashing effect
+void Sound_Reactive_LED(uint32_t sound_value) {
+    static uint32_t last_update = 0;
+    static int lit_positions[30];  // Store positions of lit LEDs
+    static int num_lit = 0;
+    
+    // Ignore sound below 400
+    if (sound_value < 650) {
+        Set_All_LEDs_Same_Color(0, 0, 0);
+        Set_Brightness(current_brightness);
+        WS2812_Send();
+        return;
+    }
+    
+    // Map sound value to LED intensity (400-4095 to 0-255)
+    uint8_t intensity = ((sound_value - 650) * 255) / (4095 - 400);
+    
+    // Update effect every 50ms
+    if (HAL_GetTick() - last_update > 10) {
+        last_update = HAL_GetTick();
+        
+        // Calculate number of LEDs to light based on intensity
+        int num_leds = (intensity * 15) / 255;  // Max 15 LEDs
+        if (num_leds < 1) num_leds = 1;
+        if (num_leds > 15) num_leds = 15;
+        
+        // Clear all LEDs
+        Set_All_LEDs_Same_Color(0, 0, 0);
+        
+        // Reset lit positions
+        num_lit = 0;
+        
+        // Try to light up new LEDs
+        int attempts = 0;
+        while (num_lit < num_leds && attempts < 100) {
+            attempts++;
+            
+            // Generate random position
+            int row = rand() % 3;
+            int col = rand() % 10;
+            
+            // Check if position is valid
+            if (is_valid_position(row, col, lit_positions, num_lit)) {
+                // Store position
+                lit_positions[num_lit] = row * 10 + col;
+                num_lit++;
+                
+                // Get color based on intensity
+                uint8_t r, g, b;
+                get_temperature_color(intensity, &r, &g, &b);
+                
+                // Light up the LED
+                Set_LED_Matrix(row, col, r, g, b);
             }
         }
     }
-
+    
+    // Apply brightness
     Set_Brightness(current_brightness);
     WS2812_Send();
 }
 
-// Debug function - Test GYMAX4466 GPIO
-void Debug_Music_GPIO(void) {
-    uint8_t gpio_state = HAL_GPIO_ReadPin(MUSIC_OUT_PORT, MUSIC_OUT_PIN);
-
-    // Blink built-in LED (PC13) theo GPIO state
-    if(gpio_state) {
-        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);   // LED ON khi có signal
-    } else {
-        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET); // LED OFF khi không có signal
-    }
-}
-
-// Debug Music Mode - hiển thị thông tin trên LCD
-void Debug_Music_Mode(void) {
-    if(current_effect == EFFECT_MUSIC) {
-        uint8_t sound_detected = Read_Sound_Detection();
-        char debug_msg[20];
-
-        // Line 1: Music mode status
-        LCD_Parallel_SetCursor(0, 0);
-        LCD_Parallel_Print("Music Mode ACTIVE");
-
-        // Line 2: GPIO state và time
-        LCD_Parallel_SetCursor(1, 0);
-        snprintf(debug_msg, sizeof(debug_msg), "GPIO:%d T:%lu",
-                sound_detected, (HAL_GetTick()/1000));
-        LCD_Parallel_Print(debug_msg);
-
-        // Clear remaining chars
-        int msg_len = strlen(debug_msg);
-        for(int i = msg_len; i < LCD_COLS; i++) {
-            LCD_Parallel_PrintChar(' ');
-        }
-    }
-}
-
-// Test music mode với fake signal
-void Test_Music_Mode_Fake(void) {
-    // Simulate sound detection for testing
-    static uint32_t last_fake_beat = 0;
-    uint32_t current_time = HAL_GetTick();
-
-    if(current_time - last_fake_beat > 500) {  // Fake beat every 500ms
-        // Flash all LEDs với random color
-        int red = (current_time % 256);
-        int green = ((current_time * 2) % 256);
-        int blue = ((current_time * 3) % 256);
-
-        for(int i = 0; i < MAX_LED; i++) {
-            Set_LED(i, red, green, blue);
-        }
-        Set_Brightness(current_brightness);
-        WS2812_Send();
-
-        last_fake_beat = current_time;
-
-        // Blink built-in LED
-        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
-        HAL_Delay(50);
-        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
-    }
-}
 /* USER CODE END 0 */
 
 /**
@@ -737,7 +816,7 @@ int main(void)
   MX_GPIO_Init();
   MX_DMA_Init();
   MX_TIM1_Init();
-
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
 
   // Initialize keypad
@@ -753,164 +832,44 @@ int main(void)
 
 
   // Update LCD with initial status
-  Update_LCD_Display();
+  //Update_LCD_Display();
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  int mn = 5000, mx = 0, avg = 0, cnt = 0;
   while (1)
   {
-	  for (int i = 0; i <= 2; ++i) {
-		 for (int j = 0; j <= 9; ++j) {
-			 Set_LED_Matrix(i, j, 255, 255, 255);
-			 Set_Brightness(20);
-			 WS2812_Send();
-			 HAL_Delay(200);
-		 }
-	  }
-//    // Check for keypad input
-//    char key = Keypad_Read();
-//    if(key != 0) {
-//        Process_Keypad_Input(key);
-//        // Update LCD immediately when key is pressed
-//        Update_LCD_Display();
-//        last_lcd_update = HAL_GetTick();
-//    }
-//
-//    // Update LCD display periodically (independent of LED effects)
-//    if(HAL_GetTick() - last_lcd_update > LCD_UPDATE_INTERVAL) {
-//        Update_LCD_Display();
-//        last_lcd_update = HAL_GetTick();
-//    }
-//
-//    // Run current effect based on state
-//    switch(current_effect) {
-//        case EFFECT_FADE:
-//            Set_All_LEDs_Same_Color(color_values[current_color][0],
-//                                  color_values[current_color][1],
-//                                  color_values[current_color][2]);
-//            // Apply fade with current brightness
-//            for (int brightness = 0; brightness <= current_brightness; brightness += 2) {
-//                Set_Brightness(brightness);
-//                WS2812_Send();
-//                HAL_Delay((LED_DELAY * 5) / current_speed);
-//
-//                // Check keypad during effect
-//                char key_during_effect = Keypad_Read();
-//                if(key_during_effect != 0) {
-//                    Process_Keypad_Input(key_during_effect);
-//                    Update_LCD_Display();
-//                    last_lcd_update = HAL_GetTick();
-//                }
-//            }
-//            for (int brightness = current_brightness; brightness >= 0; brightness -= 2) {
-//                Set_Brightness(brightness);
-//                WS2812_Send();
-//                HAL_Delay((LED_DELAY * 5) / current_speed);
-//
-//                // Check keypad during effect
-//                char key_during_effect = Keypad_Read();
-//                if(key_during_effect != 0) {
-//                    Process_Keypad_Input(key_during_effect);
-//                    Update_LCD_Display();
-//                    last_lcd_update = HAL_GetTick();
-//                }
-//            }
-//            break;
-//
-//        case EFFECT_RAINBOW:
-//            Rainbow_Effect(current_speed);
-//            // Rainbow effect handles its own brightness, but we can limit it
-//            break;
-//
-//        case EFFECT_RUN:
-//            Pixel_Run_Effect(current_speed, color_values[current_color][0],
-//                           color_values[current_color][1],
-//                           color_values[current_color][2]);
-//            break;
-//
-//        case EFFECT_FLASHING:
-//            Set_All_LEDs_Same_Color(color_values[current_color][0],
-//                                  color_values[current_color][1],
-//                                  color_values[current_color][2]);
-//            Set_Brightness(current_brightness);
-//            WS2812_Send();
-//            HAL_Delay((LED_DELAY * 30) / current_speed);
-//
-//            // Check keypad during flash ON
-//            char key_flash_on = Keypad_Read();
-//            if(key_flash_on != 0) {
-//                Process_Keypad_Input(key_flash_on);
-//                Update_LCD_Display();
-//                last_lcd_update = HAL_GetTick();
-//            }
-//
-//            Set_Brightness(0);
-//            WS2812_Send();
-//            HAL_Delay((LED_DELAY * 30) / current_speed);
-//
-//            // Check keypad during flash OFF
-//            char key_flash_off = Keypad_Read();
-//            if(key_flash_off != 0) {
-//                Process_Keypad_Input(key_flash_off);
-//                Update_LCD_Display();
-//                last_lcd_update = HAL_GetTick();
-//            }
-//            break;
-//
-//        case EFFECT_OFF:
-//            // Đảm bảo tắt hoàn toàn LED khi vào mode OFF
-//            if(effect_changed) {
-//                All_LEDs_Off();
-//                effect_changed = 0;
-//            }
-//
-//            // Kiểm tra keypad
-//            char key_off = Keypad_Read();
-//            if(key_off != 0) {
-//                Process_Keypad_Input(key_off);
-//                Update_LCD_Display();
-//                last_lcd_update = HAL_GetTick();
-//            }
-//
-//            // Đảm bảo LED vẫn tắt trong mode OFF
-//            Set_Brightness(0);
-//            break;
-//
-//        case EFFECT_MUSIC:
-//            if(HAL_GetTick() - last_music_update > MUSIC_UPDATE_INTERVAL) {
-//                // Debug: Show music status on LCD
-//                Debug_Music_Mode();
-//
-//                // Debug: Built-in LED follows GPIO state
-//                Debug_Music_GPIO();
-//
-//                // Main music effect
-//                Music_Effect();         // Beat flash style
-//                // Music_VU_Effect();   // VU meter style (uncomment để dùng)
-//                // Test_Music_Mode_Fake(); // Fake test (uncomment để test không cần audio)
-//
-//                last_music_update = HAL_GetTick();
-//            }
-//
-//            // Check keypad during music effect
-//            char key_music = Keypad_Read();
-//            if(key_music != 0) {
-//                Process_Keypad_Input(key_music);
-//                Update_LCD_Display();
-//                last_lcd_update = HAL_GetTick();
-//            }
-//            break;
-//
-//        default:
-//            All_LEDs_Off();
-//            HAL_Delay(100);
-//            break;
-//    }
-
     /* USER CODE END WHILE */
+    HAL_ADC_Start(&hadc1);
+    HAL_Delay(10);
+    var = HAL_ADC_GetValue(&hadc1);
 
+    if (var > mx) mx = var;
+    if (var < mn) mn = var;
+    avg += var;
+    cnt++;
+
+    // Call the sound reactive LED function
+    Sound_Reactive_LED(var);
+
+    char t[20], mnt[10], mxt[10], avgt[10];
+    LCD_Parallel_SetCursor(0, 0);
+    LCD_Parallel_Print(int_to_string(var, t));
+
+    LCD_Parallel_SetCursor(1, 0);
+    LCD_Parallel_Print(int_to_string(mn, mnt));
+
+    LCD_Parallel_SetCursor(1, 5);
+    LCD_Parallel_Print(int_to_string(mx, mxt));
+
+    LCD_Parallel_SetCursor(0, 5);
+    LCD_Parallel_Print(int_to_string(avg/cnt, avgt));
+
+    LCD_Parallel_Clear();
+
+    HAL_ADC_Stop(&hadc1);
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -924,6 +883,7 @@ void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+  RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
 
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
@@ -953,6 +913,59 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC;
+  PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV6;
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+/**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+
+  /** Common config
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
+  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.NbrOfConversion = 1;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Regular Channel
+  */
+  sConfig.Channel = ADC_CHANNEL_0;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
 }
 
 /**
@@ -1073,12 +1086,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /*Configure GPIO pin PC15 for GYMAX4466 sound detection */
-  GPIO_InitStruct.Pin = GPIO_PIN_15;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
   /* USER CODE END MX_GPIO_Init_2 */
@@ -1119,4 +1126,3 @@ void assert_failed(uint8_t *file, uint32_t line)
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
-
