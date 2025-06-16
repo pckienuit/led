@@ -1006,7 +1006,7 @@ int main(void)
 	LCD_Parallel_Print("Max:");
 	LCD_Parallel_Print(int_to_string(calculate_frequency(mx), mxt));
 
-	HAL_Delay(10);
+	//HAL_Delay(10);
 
     /* USER CODE BEGIN 3 */
   }
