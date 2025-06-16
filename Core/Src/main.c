@@ -91,6 +91,11 @@ int color_values[MAX_COLORS][3] = {
 #define FREQ_MIN 200
 #define FREQ_MAX 2000
 #define FREQ_STEP ((FREQ_MAX - FREQ_MIN) / FREQ_COLUMNS)  // 180Hz mỗi cột
+#define MIN_INTENSITY 0.0f  // Đổi từ 0.1f xuống 0.0f để tắt hoàn toàn khi không có âm thanh
+
+// Thêm biến toàn cục để lưu trạng thái trước đó
+#define SMOOTHING_FACTOR 0.3f  // Hệ số làm mượt (0-1)
+static float prev_intensities[FREQ_COLUMNS] = {0};  // Khởi tạo tất cả về 0
 
 /* USER CODE END PD */
 
@@ -856,27 +861,44 @@ void get_frequency_color(int freq, float intensity, uint8_t* r, uint8_t* g, uint
 
 // Hàm hiệu ứng nháy theo tần số
 void Frequency_Column_Effect(int adc_value) {
-    int freq = calculate_frequency(adc_value);
-    int column = get_frequency_column(freq);
+    // Tính cường độ dựa trên giá trị ADC
+    float intensity = (float)(adc_value - 1700) / (4000 - 1700);
+    if (intensity < 0.05f) intensity = 0;  // Thêm ngưỡng để tránh nhiễu
+    if (intensity > 1) intensity = 1;
     
-    // Tắt tất cả LED
-    Set_All_LEDs_Same_Color(0, 0, 0);
+    // Tính số cột cần sáng dựa trên cường độ
+    int num_columns = (int)(intensity * FREQ_COLUMNS);
     
-    if (column >= 0 && column < FREQ_COLUMNS) {
-        // Tính cường độ dựa trên giá trị ADC
-        float intensity = (float)(adc_value - 1700) / (4000 - 1700);
-        if (intensity < 0) intensity = 0;
-        if (intensity > 1) intensity = 1;
+    // Cập nhật từng cột
+    for (int i = 0; i < FREQ_COLUMNS; i++) {
+        float target_intensity;
+        if (i < num_columns) {
+            target_intensity = intensity;  // Sử dụng cường độ thực tế
+        } else {
+            target_intensity = 0.0f;  // Tắt hoàn toàn
+        }
         
-        // Tính số cột cần sáng dựa trên cường độ
-        int num_columns = (int)(intensity * FREQ_COLUMNS);
-        if (num_columns < 1) num_columns = 1;
+        // Áp dụng smoothing
+        prev_intensities[i] = prev_intensities[i] * (1.0f - SMOOTHING_FACTOR) + 
+                            target_intensity * SMOOTHING_FACTOR;
         
-        // Sáng các cột từ 0 đến num_columns
-        for (int i = 0; i < num_columns; i++) {
-            uint8_t r, g, b;
-            get_frequency_color(FREQ_MIN + i * FREQ_STEP, 1.0, &r, &g, &b);
-            Set_LED_Col(i, r, g, b);
+        // Thêm hiệu ứng fade cho các cột cao hơn
+        float fade_factor = 1.0f - ((float)i / FREQ_COLUMNS) * 0.3f;
+        
+        uint8_t r, g, b;
+        get_frequency_color(FREQ_MIN + i * FREQ_STEP, 1.0, &r, &g, &b);
+        
+        // Áp dụng cường độ và fade
+        float final_intensity = prev_intensities[i] * fade_factor;
+        
+        // Chỉ cập nhật LED nếu có cường độ đáng kể
+        if (final_intensity > 0.01f) {
+            Set_LED_Col(i, 
+                       (uint8_t)(r * final_intensity), 
+                       (uint8_t)(g * final_intensity), 
+                       (uint8_t)(b * final_intensity));
+        } else {
+            Set_LED_Col(i, 0, 0, 0);  // Tắt hoàn toàn nếu cường độ quá thấp
         }
     }
     
@@ -943,47 +965,49 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-    HAL_ADC_Start(&hadc1);
-    HAL_Delay(10);
-    var = HAL_ADC_GetValue(&hadc1);
+	HAL_ADC_Start(&hadc1);
+	var = HAL_ADC_GetValue(&hadc1);
+	HAL_ADC_Stop(&hadc1);
 
-    if (var > mx) mx = var;
-    if (var < mn && var > SILENT_VALUE && calculate_frequency(var) > 0) mn = var;
-    avg += var;
-    cnt++;
+	if (var > mx) mx = var;
+	if (var < mn && var > SILENT_VALUE && calculate_frequency(var) > 0) mn = var;
+	avg += var;
+	cnt++;
 
-    // Khai báo biến chuỗi
-    char t[20], mnt[10], mxt[10], freqt[10];
-    int freq = calculate_frequency(var);
 
-    Frequency_Column_Effect(var);
+	// Khai báo biến chuỗi
+	char t[20], mnt[10], mxt[10], freqt[10];
+	int freq = calculate_frequency(var);
 
-    // Hiển thị thông tin LCD
-    LCD_Parallel_Clear();
-    
-    // Dòng 1: Hiển thị giá trị ADC và tần số
-    LCD_Parallel_SetCursor(0, 0);
-    LCD_Parallel_Print("ADC:");
-    LCD_Parallel_Print(int_to_string(var, t));
-    
-    LCD_Parallel_SetCursor(0, 8);
-    LCD_Parallel_Print("Hz:");
-    LCD_Parallel_Print(int_to_string(freq, freqt));
+	// Cập nhật hiệu ứng LED
+	Frequency_Column_Effect(var);
 
-    // Dòng 2: Hiển thị giá trị min và max
-    LCD_Parallel_SetCursor(1, 0);
-    LCD_Parallel_Print("Min:");
-    if(mn != 5000)
-        LCD_Parallel_Print(int_to_string(calculate_frequency(mn), mnt));
-    else
-        LCD_Parallel_Print("NaN");
-    
-    LCD_Parallel_SetCursor(1, 8);
-    LCD_Parallel_Print("Max:");
-    LCD_Parallel_Print(int_to_string(calculate_frequency(mx), mxt));
+	// Hiển thị thông tin LCD
+	LCD_Parallel_Clear();
 
-    //HAL_Delay(100);
-    HAL_ADC_Stop(&hadc1);
+	// Dòng 1: Hiển thị giá trị ADC và tần số
+	LCD_Parallel_SetCursor(0, 0);
+	LCD_Parallel_Print("ADC:");
+	LCD_Parallel_Print(int_to_string(var, t));
+
+	LCD_Parallel_SetCursor(0, 8);
+	LCD_Parallel_Print("Hz:");
+	LCD_Parallel_Print(int_to_string(freq, freqt));
+
+	// Dòng 2: Hiển thị giá trị min và max
+	LCD_Parallel_SetCursor(1, 0);
+	LCD_Parallel_Print("Min:");
+	if(mn != 5000)
+		LCD_Parallel_Print(int_to_string(calculate_frequency(mn), mnt));
+	else
+		LCD_Parallel_Print("NaN");
+
+	LCD_Parallel_SetCursor(1, 8);
+	LCD_Parallel_Print("Max:");
+	LCD_Parallel_Print(int_to_string(calculate_frequency(mx), mxt));
+
+	HAL_Delay(10);
+
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
