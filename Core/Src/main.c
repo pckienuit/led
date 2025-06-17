@@ -36,7 +36,7 @@
 #define DEFAULT_BRIGHTNESS 10
 
 // FFT Configuration - Tối ưu cho dải 200Hz-4000Hz
-#define FFT_SIZE 128       // Tăng lên 128 để có độ phân giải tốt hơn
+#define FFT_SIZE 128     // Tăng lên 128 để có độ phân giải tốt hơn
 #define FFT_SIZE_LOG2 7    // log2(128) = 7
 #define SAMPLE_RATE 10000  // 10kHz sampling để cover 4000Hz (Nyquist)
 #define FREQ_BANDS 10      // 10 cột LED
@@ -57,8 +57,8 @@
 #define MATRIX_COLS 10
 
 // Processing parameters
-#define SMOOTHING_FACTOR 1.0f  // Tăng để mượt hơn
-#define AGC_FACTOR 0.9f         // AGC mạnh hơn
+#define SMOOTHING_FACTOR 0.7f  // Tăng để mượt hơn
+#define AGC_FACTOR 0.8f         // AGC mạnh hơn
 #define PEAK_HOLD_TIME 300      // Giảm thời gian hold peak
 
 /* USER CODE END PD */
@@ -643,16 +643,16 @@ int main(void)
   Set_Brightness(0);
   WS2812_Send();
 
-  LCD_Parallel_Clear();
-  LCD_Parallel_SetCursor(0, 0);
-  LCD_Parallel_Print("Range:200-4000Hz");
-  LCD_Parallel_SetCursor(1, 0);
-  LCD_Parallel_Print("Res:78Hz/bin");
-  HAL_Delay(1000);
+//  LCD_Parallel_Clear();
+//  LCD_Parallel_SetCursor(0, 0);
+//  LCD_Parallel_Print("Range:200-4000Hz");
+//  LCD_Parallel_SetCursor(1, 0);
+//  LCD_Parallel_Print("Res:78Hz/bin");
+//  HAL_Delay(1000);
   
   LCD_Parallel_Clear();
   LCD_Parallel_Print("Ready!");
-  HAL_Delay(500);
+  //HAL_Delay(500);
 
   /* USER CODE END 2 */
 
@@ -687,29 +687,6 @@ int main(void)
         
         // Display on LEDs
         display_spectrum();
-        
-        // Update LCD with frequency range info
-        static uint32_t last_lcd = 0;
-        if(HAL_GetTick() - last_lcd > 2000) {
-            LCD_Parallel_Clear();
-            LCD_Parallel_SetCursor(0, 0);
-            LCD_Parallel_Print("200-4000Hz");
-            
-            LCD_Parallel_SetCursor(1, 0);
-            char debug_str[16];
-            // Show gain and max frequency band activity
-            uint8_t max_band = 0;
-            for(uint8_t i = 1; i < FREQ_BANDS; i++) {
-                if(freq_bands[i] > freq_bands[max_band]) {
-                    max_band = i;
-                }
-            }
-            snprintf(debug_str, sizeof(debug_str), "G:%d B:%d", 
-                    gain_factor >> 8, max_band);
-            LCD_Parallel_Print(debug_str);
-            
-            last_lcd = HAL_GetTick();
-        }
     }
     
     // No delay for maximum sampling rate
