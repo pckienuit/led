@@ -129,7 +129,7 @@ static void MX_TIM1_Init(void);
 static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
 
-/* FFT Functions
+// FFT Functions
 void fft_bit_reverse(void);
 void fft_butterfly(uint8_t stage, uint8_t step);
 void perform_fft(void);
@@ -148,7 +148,6 @@ void WS2812_Send(void);
 void sample_audio(void);
 void display_spectrum(void);
 void get_band_color(uint8_t band, uint8_t intensity, uint8_t* r, uint8_t* g, uint8_t* b);
-*/
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -463,57 +462,6 @@ void sample_audio(void) {
 }
 
 // Enhanced spectrum display with better scaling
-void display_spectrum(void) {
-    // Clear all LEDs
-    for(uint8_t i = 0; i < MAX_LED; i++) {
-        Set_LED(i, 0, 0, 0);
-    }
-    
-    // Display each frequency band
-    for(uint8_t band = 0; band < FREQ_BANDS; band++) {
-        // Enhanced scaling for better visualization
-        uint16_t scaled = freq_bands[band] >> 4; // Divide by 16 for scaling
-        if(scaled > 255) scaled = 255;
-        
-        uint8_t intensity = (uint8_t)scaled;
-        
-        if(intensity > 10) { // Lower threshold for more sensitivity
-            // Calculate number of LEDs to light in this column (0-3)
-            uint8_t num_leds = (intensity * MATRIX_ROWS) / 255;
-            if(num_leds > MATRIX_ROWS) num_leds = MATRIX_ROWS;
-            
-            // Get color for this band
-            uint8_t r, g, b;
-            get_band_color(band, intensity, &r, &g, &b);
-            
-            // Light LEDs from bottom up with gradient effect
-            for(uint8_t led = 0; led < num_leds; led++) {
-                uint8_t row = MATRIX_ROWS - 1 - led;
-                
-                // Apply brightness gradient (bottom brighter than top)
-                uint8_t gradient = 255 - (led * 60); // Reduce brightness by 60 for each level
-                
-                Set_LED_Matrix(row, band, 
-                              (r * gradient) / 255,
-                              (g * gradient) / 255,
-                              (b * gradient) / 255);
-            }
-            
-            // Show peak with white color
-            uint16_t peak_scaled = peak_bands[band] >> 4;
-            if(peak_scaled > 255) peak_scaled = 255;
-            uint8_t peak_leds = (peak_scaled * MATRIX_ROWS) / 255;
-            
-            if(peak_leds < MATRIX_ROWS && peak_leds > num_leds) {
-                Set_LED_Matrix(MATRIX_ROWS - 1 - peak_leds, band, 255, 255, 255);
-            }
-        }
-    }
-    
-    Set_Brightness(current_brightness);
-    WS2812_Send();
-}
-
 void Set_LED(int LEDnum, int Red, int Green, int Blue) {
     if(LEDnum >= 0 && LEDnum < MAX_LED) {
         LED_Data[LEDnum][0] = LEDnum;
@@ -582,6 +530,57 @@ void WS2812_Send(void) {
         HAL_TIM_PWM_Stop_DMA(&htim1, TIM_CHANNEL_1);
         datasentflag = 1;
     }
+}
+
+void display_spectrum(void) {
+    // Clear all LEDs
+    for(uint8_t i = 0; i < MAX_LED; i++) {
+        Set_LED(i, 0, 0, 0);
+    }
+
+    // Display each frequency band
+    for(uint8_t band = 0; band < FREQ_BANDS; band++) {
+        // Enhanced scaling for better visualization
+        uint16_t scaled = freq_bands[band] >> 4; // Divide by 16 for scaling
+        if(scaled > 255) scaled = 255;
+
+        uint8_t intensity = (uint8_t)scaled;
+
+        if(intensity > 10) { // Lower threshold for more sensitivity
+            // Calculate number of LEDs to light in this column (0-3)
+            uint8_t num_leds = (intensity * MATRIX_ROWS) / 255;
+            if(num_leds > MATRIX_ROWS) num_leds = MATRIX_ROWS;
+
+            // Get color for this band
+            uint8_t r, g, b;
+            get_band_color(band, intensity, &r, &g, &b);
+
+            // Light LEDs from bottom up with gradient effect
+            for(uint8_t led = 0; led < num_leds; led++) {
+                uint8_t row = MATRIX_ROWS - 1 - led;
+
+                // Apply brightness gradient (bottom brighter than top)
+                uint8_t gradient = 255 - (led * 60); // Reduce brightness by 60 for each level
+
+                Set_LED_Matrix(row, band,
+                              (r * gradient) / 255,
+                              (g * gradient) / 255,
+                              (b * gradient) / 255);
+            }
+
+            // Show peak with white color
+            uint16_t peak_scaled = peak_bands[band] >> 4;
+            if(peak_scaled > 255) peak_scaled = 255;
+            uint8_t peak_leds = (peak_scaled * MATRIX_ROWS) / 255;
+
+            if(peak_leds < MATRIX_ROWS && peak_leds > num_leds) {
+                Set_LED_Matrix(MATRIX_ROWS - 1 - peak_leds, band, 255, 255, 255);
+            }
+        }
+    }
+
+    Set_Brightness(current_brightness);
+    WS2812_Send();
 }
 
 void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim) {

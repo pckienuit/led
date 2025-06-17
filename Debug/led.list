@@ -27,25 +27,25 @@ Idx Name          Size      VMA       LMA       File off  Algn
                   ALLOC
  11 .ARM.attributes 00000029  00000000  00000000  00006014  2**0
                   CONTENTS, READONLY
- 12 .debug_info   0000a98c  00000000  00000000  0000603d  2**0
+ 12 .debug_info   0000a928  00000000  00000000  0000603d  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 13 .debug_abbrev 00001e85  00000000  00000000  000109c9  2**0
+ 13 .debug_abbrev 00001e55  00000000  00000000  00010965  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 14 .debug_aranges 00000c10  00000000  00000000  00012850  2**3
+ 14 .debug_aranges 00000c10  00000000  00000000  000127c0  2**3
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 15 .debug_rnglists 00000952  00000000  00000000  00013460  2**0
+ 15 .debug_rnglists 00000952  00000000  00000000  000133d0  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 16 .debug_macro  00018312  00000000  00000000  00013db2  2**0
+ 16 .debug_macro  00018312  00000000  00000000  00013d22  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 17 .debug_line   0000d8a6  00000000  00000000  0002c0c4  2**0
+ 17 .debug_line   0000d8a6  00000000  00000000  0002c034  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 18 .debug_str    0008ddbd  00000000  00000000  0003996a  2**0
+ 18 .debug_str    0008ddbd  00000000  00000000  000398da  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 19 .comment      00000043  00000000  00000000  000c7727  2**0
+ 19 .comment      00000043  00000000  00000000  000c7697  2**0
                   CONTENTS, READONLY
- 20 .debug_frame  0000329c  00000000  00000000  000c776c  2**2
+ 20 .debug_frame  0000329c  00000000  00000000  000c76dc  2**2
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 21 .debug_line_str 00000065  00000000  00000000  000caa08  2**0
+ 21 .debug_line_str 00000065  00000000  00000000  000ca978  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
 
 Disassembly of section .text:
@@ -2183,587 +2183,587 @@ void sample_audio(void) {
  8001184:	200000ec 	.word	0x200000ec
  8001188:	200004d1 	.word	0x200004d1
 
-0800118c <display_spectrum>:
+0800118c <Set_LED>:
 
 // Enhanced spectrum display with better scaling
-void display_spectrum(void) {
- 800118c:	b5f0      	push	{r4, r5, r6, r7, lr}
- 800118e:	b087      	sub	sp, #28
- 8001190:	af02      	add	r7, sp, #8
-    // Clear all LEDs
-    for(uint8_t i = 0; i < MAX_LED; i++) {
- 8001192:	2300      	movs	r3, #0
- 8001194:	73fb      	strb	r3, [r7, #15]
- 8001196:	e008      	b.n	80011aa <display_spectrum+0x1e>
-        Set_LED(i, 0, 0, 0);
- 8001198:	7bf8      	ldrb	r0, [r7, #15]
- 800119a:	2300      	movs	r3, #0
- 800119c:	2200      	movs	r2, #0
- 800119e:	2100      	movs	r1, #0
- 80011a0:	f000 f8b0 	bl	8001304 <Set_LED>
-    for(uint8_t i = 0; i < MAX_LED; i++) {
- 80011a4:	7bfb      	ldrb	r3, [r7, #15]
- 80011a6:	3301      	adds	r3, #1
- 80011a8:	73fb      	strb	r3, [r7, #15]
- 80011aa:	7bfb      	ldrb	r3, [r7, #15]
- 80011ac:	2b3b      	cmp	r3, #59	@ 0x3b
- 80011ae:	d9f3      	bls.n	8001198 <display_spectrum+0xc>
-    }
-    
-    // Display each frequency band
-    for(uint8_t band = 0; band < FREQ_BANDS; band++) {
- 80011b0:	2300      	movs	r3, #0
- 80011b2:	73bb      	strb	r3, [r7, #14]
- 80011b4:	e08d      	b.n	80012d2 <display_spectrum+0x146>
-        // Enhanced scaling for better visualization
-        uint16_t scaled = freq_bands[band] >> 4; // Divide by 16 for scaling
- 80011b6:	7bbb      	ldrb	r3, [r7, #14]
- 80011b8:	4a4d      	ldr	r2, [pc, #308]	@ (80012f0 <display_spectrum+0x164>)
- 80011ba:	f832 3013 	ldrh.w	r3, [r2, r3, lsl #1]
- 80011be:	091b      	lsrs	r3, r3, #4
- 80011c0:	81bb      	strh	r3, [r7, #12]
-        if(scaled > 255) scaled = 255;
- 80011c2:	89bb      	ldrh	r3, [r7, #12]
- 80011c4:	2bff      	cmp	r3, #255	@ 0xff
- 80011c6:	d901      	bls.n	80011cc <display_spectrum+0x40>
- 80011c8:	23ff      	movs	r3, #255	@ 0xff
- 80011ca:	81bb      	strh	r3, [r7, #12]
-        
-        uint8_t intensity = (uint8_t)scaled;
- 80011cc:	89bb      	ldrh	r3, [r7, #12]
- 80011ce:	71fb      	strb	r3, [r7, #7]
-        
-        if(intensity > 10) { // Lower threshold for more sensitivity
- 80011d0:	79fb      	ldrb	r3, [r7, #7]
- 80011d2:	2b0a      	cmp	r3, #10
- 80011d4:	d97a      	bls.n	80012cc <display_spectrum+0x140>
-            // Calculate number of LEDs to light in this column (0-3)
-            uint8_t num_leds = (intensity * MATRIX_ROWS) / 255;
- 80011d6:	79fb      	ldrb	r3, [r7, #7]
- 80011d8:	4a46      	ldr	r2, [pc, #280]	@ (80012f4 <display_spectrum+0x168>)
- 80011da:	fb82 1203 	smull	r1, r2, r2, r3
- 80011de:	1152      	asrs	r2, r2, #5
- 80011e0:	17db      	asrs	r3, r3, #31
- 80011e2:	1ad3      	subs	r3, r2, r3
- 80011e4:	72fb      	strb	r3, [r7, #11]
-            if(num_leds > MATRIX_ROWS) num_leds = MATRIX_ROWS;
- 80011e6:	7afb      	ldrb	r3, [r7, #11]
- 80011e8:	2b03      	cmp	r3, #3
- 80011ea:	d901      	bls.n	80011f0 <display_spectrum+0x64>
- 80011ec:	2303      	movs	r3, #3
- 80011ee:	72fb      	strb	r3, [r7, #11]
-            
-            // Get color for this band
-            uint8_t r, g, b;
-            get_band_color(band, intensity, &r, &g, &b);
- 80011f0:	1cbc      	adds	r4, r7, #2
- 80011f2:	1cfa      	adds	r2, r7, #3
- 80011f4:	79f9      	ldrb	r1, [r7, #7]
- 80011f6:	7bb8      	ldrb	r0, [r7, #14]
- 80011f8:	1c7b      	adds	r3, r7, #1
- 80011fa:	9300      	str	r3, [sp, #0]
- 80011fc:	4623      	mov	r3, r4
- 80011fe:	f7ff fea5 	bl	8000f4c <get_band_color>
-            
-            // Light LEDs from bottom up with gradient effect
-            for(uint8_t led = 0; led < num_leds; led++) {
- 8001202:	2300      	movs	r3, #0
- 8001204:	72bb      	strb	r3, [r7, #10]
- 8001206:	e039      	b.n	800127c <display_spectrum+0xf0>
-                uint8_t row = MATRIX_ROWS - 1 - led;
- 8001208:	7abb      	ldrb	r3, [r7, #10]
- 800120a:	f1c3 0302 	rsb	r3, r3, #2
- 800120e:	717b      	strb	r3, [r7, #5]
-                
-                // Apply brightness gradient (bottom brighter than top)
-                uint8_t gradient = 255 - (led * 60); // Reduce brightness by 60 for each level
- 8001210:	7abb      	ldrb	r3, [r7, #10]
- 8001212:	461a      	mov	r2, r3
- 8001214:	011b      	lsls	r3, r3, #4
- 8001216:	1ad3      	subs	r3, r2, r3
- 8001218:	009b      	lsls	r3, r3, #2
- 800121a:	b2db      	uxtb	r3, r3
- 800121c:	3b01      	subs	r3, #1
- 800121e:	713b      	strb	r3, [r7, #4]
-                
-                Set_LED_Matrix(row, band, 
- 8001220:	7978      	ldrb	r0, [r7, #5]
- 8001222:	7bb9      	ldrb	r1, [r7, #14]
-                              (r * gradient) / 255,
- 8001224:	78fb      	ldrb	r3, [r7, #3]
- 8001226:	461a      	mov	r2, r3
- 8001228:	793b      	ldrb	r3, [r7, #4]
- 800122a:	fb02 f303 	mul.w	r3, r2, r3
-                Set_LED_Matrix(row, band, 
- 800122e:	4a32      	ldr	r2, [pc, #200]	@ (80012f8 <display_spectrum+0x16c>)
- 8001230:	fb82 4203 	smull	r4, r2, r2, r3
- 8001234:	441a      	add	r2, r3
- 8001236:	11d2      	asrs	r2, r2, #7
- 8001238:	17db      	asrs	r3, r3, #31
- 800123a:	1ad4      	subs	r4, r2, r3
-                              (g * gradient) / 255,
- 800123c:	78bb      	ldrb	r3, [r7, #2]
- 800123e:	461a      	mov	r2, r3
- 8001240:	793b      	ldrb	r3, [r7, #4]
- 8001242:	fb02 f303 	mul.w	r3, r2, r3
-                Set_LED_Matrix(row, band, 
- 8001246:	4a2c      	ldr	r2, [pc, #176]	@ (80012f8 <display_spectrum+0x16c>)
- 8001248:	fb82 5203 	smull	r5, r2, r2, r3
- 800124c:	441a      	add	r2, r3
- 800124e:	11d2      	asrs	r2, r2, #7
- 8001250:	17db      	asrs	r3, r3, #31
- 8001252:	1ad5      	subs	r5, r2, r3
-                              (b * gradient) / 255);
- 8001254:	787b      	ldrb	r3, [r7, #1]
- 8001256:	461a      	mov	r2, r3
- 8001258:	793b      	ldrb	r3, [r7, #4]
- 800125a:	fb02 f303 	mul.w	r3, r2, r3
-                Set_LED_Matrix(row, band, 
- 800125e:	4a26      	ldr	r2, [pc, #152]	@ (80012f8 <display_spectrum+0x16c>)
- 8001260:	fb82 6203 	smull	r6, r2, r2, r3
- 8001264:	441a      	add	r2, r3
- 8001266:	11d2      	asrs	r2, r2, #7
- 8001268:	17db      	asrs	r3, r3, #31
- 800126a:	1ad3      	subs	r3, r2, r3
- 800126c:	9300      	str	r3, [sp, #0]
- 800126e:	462b      	mov	r3, r5
- 8001270:	4622      	mov	r2, r4
- 8001272:	f000 f879 	bl	8001368 <Set_LED_Matrix>
-            for(uint8_t led = 0; led < num_leds; led++) {
- 8001276:	7abb      	ldrb	r3, [r7, #10]
- 8001278:	3301      	adds	r3, #1
- 800127a:	72bb      	strb	r3, [r7, #10]
- 800127c:	7aba      	ldrb	r2, [r7, #10]
- 800127e:	7afb      	ldrb	r3, [r7, #11]
- 8001280:	429a      	cmp	r2, r3
- 8001282:	d3c1      	bcc.n	8001208 <display_spectrum+0x7c>
-            }
-            
-            // Show peak with white color
-            uint16_t peak_scaled = peak_bands[band] >> 4;
- 8001284:	7bbb      	ldrb	r3, [r7, #14]
- 8001286:	4a1d      	ldr	r2, [pc, #116]	@ (80012fc <display_spectrum+0x170>)
- 8001288:	f832 3013 	ldrh.w	r3, [r2, r3, lsl #1]
- 800128c:	091b      	lsrs	r3, r3, #4
- 800128e:	813b      	strh	r3, [r7, #8]
-            if(peak_scaled > 255) peak_scaled = 255;
- 8001290:	893b      	ldrh	r3, [r7, #8]
- 8001292:	2bff      	cmp	r3, #255	@ 0xff
- 8001294:	d901      	bls.n	800129a <display_spectrum+0x10e>
- 8001296:	23ff      	movs	r3, #255	@ 0xff
- 8001298:	813b      	strh	r3, [r7, #8]
-            uint8_t peak_leds = (peak_scaled * MATRIX_ROWS) / 255;
- 800129a:	893b      	ldrh	r3, [r7, #8]
- 800129c:	4a15      	ldr	r2, [pc, #84]	@ (80012f4 <display_spectrum+0x168>)
- 800129e:	fb82 1203 	smull	r1, r2, r2, r3
- 80012a2:	1152      	asrs	r2, r2, #5
- 80012a4:	17db      	asrs	r3, r3, #31
- 80012a6:	1ad3      	subs	r3, r2, r3
- 80012a8:	71bb      	strb	r3, [r7, #6]
-            
-            if(peak_leds < MATRIX_ROWS && peak_leds > num_leds) {
- 80012aa:	79bb      	ldrb	r3, [r7, #6]
- 80012ac:	2b02      	cmp	r3, #2
- 80012ae:	d80d      	bhi.n	80012cc <display_spectrum+0x140>
- 80012b0:	79ba      	ldrb	r2, [r7, #6]
- 80012b2:	7afb      	ldrb	r3, [r7, #11]
- 80012b4:	429a      	cmp	r2, r3
- 80012b6:	d909      	bls.n	80012cc <display_spectrum+0x140>
-                Set_LED_Matrix(MATRIX_ROWS - 1 - peak_leds, band, 255, 255, 255);
- 80012b8:	79bb      	ldrb	r3, [r7, #6]
- 80012ba:	f1c3 0002 	rsb	r0, r3, #2
- 80012be:	7bb9      	ldrb	r1, [r7, #14]
- 80012c0:	23ff      	movs	r3, #255	@ 0xff
- 80012c2:	9300      	str	r3, [sp, #0]
- 80012c4:	23ff      	movs	r3, #255	@ 0xff
- 80012c6:	22ff      	movs	r2, #255	@ 0xff
- 80012c8:	f000 f84e 	bl	8001368 <Set_LED_Matrix>
-    for(uint8_t band = 0; band < FREQ_BANDS; band++) {
- 80012cc:	7bbb      	ldrb	r3, [r7, #14]
- 80012ce:	3301      	adds	r3, #1
- 80012d0:	73bb      	strb	r3, [r7, #14]
- 80012d2:	7bbb      	ldrb	r3, [r7, #14]
- 80012d4:	2b09      	cmp	r3, #9
- 80012d6:	f67f af6e 	bls.w	80011b6 <display_spectrum+0x2a>
-            }
-        }
-    }
-    
-    Set_Brightness(current_brightness);
- 80012da:	4b09      	ldr	r3, [pc, #36]	@ (8001300 <display_spectrum+0x174>)
- 80012dc:	681b      	ldr	r3, [r3, #0]
- 80012de:	4618      	mov	r0, r3
- 80012e0:	f000 f876 	bl	80013d0 <Set_Brightness>
-    WS2812_Send();
- 80012e4:	f000 f8c2 	bl	800146c <WS2812_Send>
-}
- 80012e8:	bf00      	nop
- 80012ea:	3714      	adds	r7, #20
- 80012ec:	46bd      	mov	sp, r7
- 80012ee:	bdf0      	pop	{r4, r5, r6, r7, pc}
- 80012f0:	2000046c 	.word	0x2000046c
- 80012f4:	60606061 	.word	0x60606061
- 80012f8:	80808081 	.word	0x80808081
- 80012fc:	20000494 	.word	0x20000494
- 8001300:	20000004 	.word	0x20000004
-
-08001304 <Set_LED>:
-
 void Set_LED(int LEDnum, int Red, int Green, int Blue) {
- 8001304:	b480      	push	{r7}
- 8001306:	b085      	sub	sp, #20
- 8001308:	af00      	add	r7, sp, #0
- 800130a:	60f8      	str	r0, [r7, #12]
- 800130c:	60b9      	str	r1, [r7, #8]
- 800130e:	607a      	str	r2, [r7, #4]
- 8001310:	603b      	str	r3, [r7, #0]
+ 800118c:	b480      	push	{r7}
+ 800118e:	b085      	sub	sp, #20
+ 8001190:	af00      	add	r7, sp, #0
+ 8001192:	60f8      	str	r0, [r7, #12]
+ 8001194:	60b9      	str	r1, [r7, #8]
+ 8001196:	607a      	str	r2, [r7, #4]
+ 8001198:	603b      	str	r3, [r7, #0]
     if(LEDnum >= 0 && LEDnum < MAX_LED) {
- 8001312:	68fb      	ldr	r3, [r7, #12]
- 8001314:	2b00      	cmp	r3, #0
- 8001316:	db20      	blt.n	800135a <Set_LED+0x56>
- 8001318:	68fb      	ldr	r3, [r7, #12]
- 800131a:	2b3b      	cmp	r3, #59	@ 0x3b
- 800131c:	dc1d      	bgt.n	800135a <Set_LED+0x56>
+ 800119a:	68fb      	ldr	r3, [r7, #12]
+ 800119c:	2b00      	cmp	r3, #0
+ 800119e:	db20      	blt.n	80011e2 <Set_LED+0x56>
+ 80011a0:	68fb      	ldr	r3, [r7, #12]
+ 80011a2:	2b3b      	cmp	r3, #59	@ 0x3b
+ 80011a4:	dc1d      	bgt.n	80011e2 <Set_LED+0x56>
         LED_Data[LEDnum][0] = LEDnum;
- 800131e:	68fb      	ldr	r3, [r7, #12]
- 8001320:	b2d9      	uxtb	r1, r3
- 8001322:	4a10      	ldr	r2, [pc, #64]	@ (8001364 <Set_LED+0x60>)
- 8001324:	68fb      	ldr	r3, [r7, #12]
- 8001326:	f802 1023 	strb.w	r1, [r2, r3, lsl #2]
+ 80011a6:	68fb      	ldr	r3, [r7, #12]
+ 80011a8:	b2d9      	uxtb	r1, r3
+ 80011aa:	4a10      	ldr	r2, [pc, #64]	@ (80011ec <Set_LED+0x60>)
+ 80011ac:	68fb      	ldr	r3, [r7, #12]
+ 80011ae:	f802 1023 	strb.w	r1, [r2, r3, lsl #2]
         LED_Data[LEDnum][1] = Green;
- 800132a:	687b      	ldr	r3, [r7, #4]
- 800132c:	b2d9      	uxtb	r1, r3
- 800132e:	4a0d      	ldr	r2, [pc, #52]	@ (8001364 <Set_LED+0x60>)
- 8001330:	68fb      	ldr	r3, [r7, #12]
- 8001332:	009b      	lsls	r3, r3, #2
- 8001334:	4413      	add	r3, r2
- 8001336:	460a      	mov	r2, r1
- 8001338:	705a      	strb	r2, [r3, #1]
+ 80011b2:	687b      	ldr	r3, [r7, #4]
+ 80011b4:	b2d9      	uxtb	r1, r3
+ 80011b6:	4a0d      	ldr	r2, [pc, #52]	@ (80011ec <Set_LED+0x60>)
+ 80011b8:	68fb      	ldr	r3, [r7, #12]
+ 80011ba:	009b      	lsls	r3, r3, #2
+ 80011bc:	4413      	add	r3, r2
+ 80011be:	460a      	mov	r2, r1
+ 80011c0:	705a      	strb	r2, [r3, #1]
         LED_Data[LEDnum][2] = Red;
- 800133a:	68bb      	ldr	r3, [r7, #8]
- 800133c:	b2d9      	uxtb	r1, r3
- 800133e:	4a09      	ldr	r2, [pc, #36]	@ (8001364 <Set_LED+0x60>)
- 8001340:	68fb      	ldr	r3, [r7, #12]
- 8001342:	009b      	lsls	r3, r3, #2
- 8001344:	4413      	add	r3, r2
- 8001346:	460a      	mov	r2, r1
- 8001348:	709a      	strb	r2, [r3, #2]
+ 80011c2:	68bb      	ldr	r3, [r7, #8]
+ 80011c4:	b2d9      	uxtb	r1, r3
+ 80011c6:	4a09      	ldr	r2, [pc, #36]	@ (80011ec <Set_LED+0x60>)
+ 80011c8:	68fb      	ldr	r3, [r7, #12]
+ 80011ca:	009b      	lsls	r3, r3, #2
+ 80011cc:	4413      	add	r3, r2
+ 80011ce:	460a      	mov	r2, r1
+ 80011d0:	709a      	strb	r2, [r3, #2]
         LED_Data[LEDnum][3] = Blue;
- 800134a:	683b      	ldr	r3, [r7, #0]
- 800134c:	b2d9      	uxtb	r1, r3
- 800134e:	4a05      	ldr	r2, [pc, #20]	@ (8001364 <Set_LED+0x60>)
- 8001350:	68fb      	ldr	r3, [r7, #12]
- 8001352:	009b      	lsls	r3, r3, #2
- 8001354:	4413      	add	r3, r2
- 8001356:	460a      	mov	r2, r1
- 8001358:	70da      	strb	r2, [r3, #3]
+ 80011d2:	683b      	ldr	r3, [r7, #0]
+ 80011d4:	b2d9      	uxtb	r1, r3
+ 80011d6:	4a05      	ldr	r2, [pc, #20]	@ (80011ec <Set_LED+0x60>)
+ 80011d8:	68fb      	ldr	r3, [r7, #12]
+ 80011da:	009b      	lsls	r3, r3, #2
+ 80011dc:	4413      	add	r3, r2
+ 80011de:	460a      	mov	r2, r1
+ 80011e0:	70da      	strb	r2, [r3, #3]
     }
 }
- 800135a:	bf00      	nop
- 800135c:	3714      	adds	r7, #20
- 800135e:	46bd      	mov	sp, r7
- 8001360:	bc80      	pop	{r7}
- 8001362:	4770      	bx	lr
- 8001364:	200004d4 	.word	0x200004d4
+ 80011e2:	bf00      	nop
+ 80011e4:	3714      	adds	r7, #20
+ 80011e6:	46bd      	mov	sp, r7
+ 80011e8:	bc80      	pop	{r7}
+ 80011ea:	4770      	bx	lr
+ 80011ec:	200004d4 	.word	0x200004d4
 
-08001368 <Set_LED_Matrix>:
+080011f0 <Set_LED_Matrix>:
 
 void Set_LED_Matrix(int row, int col, int Red, int Green, int Blue) {
- 8001368:	b580      	push	{r7, lr}
- 800136a:	b0a2      	sub	sp, #136	@ 0x88
- 800136c:	af00      	add	r7, sp, #0
- 800136e:	60f8      	str	r0, [r7, #12]
- 8001370:	60b9      	str	r1, [r7, #8]
- 8001372:	607a      	str	r2, [r7, #4]
- 8001374:	603b      	str	r3, [r7, #0]
+ 80011f0:	b580      	push	{r7, lr}
+ 80011f2:	b0a2      	sub	sp, #136	@ 0x88
+ 80011f4:	af00      	add	r7, sp, #0
+ 80011f6:	60f8      	str	r0, [r7, #12]
+ 80011f8:	60b9      	str	r1, [r7, #8]
+ 80011fa:	607a      	str	r2, [r7, #4]
+ 80011fc:	603b      	str	r3, [r7, #0]
     if(row >= 0 && row < 3 && col >= 0 && col < 10) {
- 8001376:	68fb      	ldr	r3, [r7, #12]
- 8001378:	2b00      	cmp	r3, #0
- 800137a:	db22      	blt.n	80013c2 <Set_LED_Matrix+0x5a>
- 800137c:	68fb      	ldr	r3, [r7, #12]
- 800137e:	2b02      	cmp	r3, #2
- 8001380:	dc1f      	bgt.n	80013c2 <Set_LED_Matrix+0x5a>
- 8001382:	68bb      	ldr	r3, [r7, #8]
- 8001384:	2b00      	cmp	r3, #0
- 8001386:	db1c      	blt.n	80013c2 <Set_LED_Matrix+0x5a>
- 8001388:	68bb      	ldr	r3, [r7, #8]
- 800138a:	2b09      	cmp	r3, #9
- 800138c:	dc19      	bgt.n	80013c2 <Set_LED_Matrix+0x5a>
+ 80011fe:	68fb      	ldr	r3, [r7, #12]
+ 8001200:	2b00      	cmp	r3, #0
+ 8001202:	db22      	blt.n	800124a <Set_LED_Matrix+0x5a>
+ 8001204:	68fb      	ldr	r3, [r7, #12]
+ 8001206:	2b02      	cmp	r3, #2
+ 8001208:	dc1f      	bgt.n	800124a <Set_LED_Matrix+0x5a>
+ 800120a:	68bb      	ldr	r3, [r7, #8]
+ 800120c:	2b00      	cmp	r3, #0
+ 800120e:	db1c      	blt.n	800124a <Set_LED_Matrix+0x5a>
+ 8001210:	68bb      	ldr	r3, [r7, #8]
+ 8001212:	2b09      	cmp	r3, #9
+ 8001214:	dc19      	bgt.n	800124a <Set_LED_Matrix+0x5a>
         const int LED_Matrix[3][10] = {
- 800138e:	4a0f      	ldr	r2, [pc, #60]	@ (80013cc <Set_LED_Matrix+0x64>)
- 8001390:	f107 0310 	add.w	r3, r7, #16
- 8001394:	4611      	mov	r1, r2
- 8001396:	2278      	movs	r2, #120	@ 0x78
- 8001398:	4618      	mov	r0, r3
- 800139a:	f003 fced 	bl	8004d78 <memcpy>
+ 8001216:	4a0f      	ldr	r2, [pc, #60]	@ (8001254 <Set_LED_Matrix+0x64>)
+ 8001218:	f107 0310 	add.w	r3, r7, #16
+ 800121c:	4611      	mov	r1, r2
+ 800121e:	2278      	movs	r2, #120	@ 0x78
+ 8001220:	4618      	mov	r0, r3
+ 8001222:	f003 fda9 	bl	8004d78 <memcpy>
             {40, 39, 38, 37, 36, 35, 34, 33, 32, 31},
             {16, 17, 18, 19, 20, 21, 22, 23, 24, 25},
             {11, 10,  9,  8,  7,  6,  5,  4,  3,  2},
         };
         Set_LED(LED_Matrix[row][col], Red, Green, Blue);
- 800139e:	68fa      	ldr	r2, [r7, #12]
- 80013a0:	4613      	mov	r3, r2
- 80013a2:	009b      	lsls	r3, r3, #2
- 80013a4:	4413      	add	r3, r2
- 80013a6:	005b      	lsls	r3, r3, #1
- 80013a8:	68ba      	ldr	r2, [r7, #8]
- 80013aa:	4413      	add	r3, r2
- 80013ac:	009b      	lsls	r3, r3, #2
- 80013ae:	3388      	adds	r3, #136	@ 0x88
- 80013b0:	443b      	add	r3, r7
- 80013b2:	f853 0c78 	ldr.w	r0, [r3, #-120]
- 80013b6:	f8d7 3090 	ldr.w	r3, [r7, #144]	@ 0x90
- 80013ba:	683a      	ldr	r2, [r7, #0]
- 80013bc:	6879      	ldr	r1, [r7, #4]
- 80013be:	f7ff ffa1 	bl	8001304 <Set_LED>
+ 8001226:	68fa      	ldr	r2, [r7, #12]
+ 8001228:	4613      	mov	r3, r2
+ 800122a:	009b      	lsls	r3, r3, #2
+ 800122c:	4413      	add	r3, r2
+ 800122e:	005b      	lsls	r3, r3, #1
+ 8001230:	68ba      	ldr	r2, [r7, #8]
+ 8001232:	4413      	add	r3, r2
+ 8001234:	009b      	lsls	r3, r3, #2
+ 8001236:	3388      	adds	r3, #136	@ 0x88
+ 8001238:	443b      	add	r3, r7
+ 800123a:	f853 0c78 	ldr.w	r0, [r3, #-120]
+ 800123e:	f8d7 3090 	ldr.w	r3, [r7, #144]	@ 0x90
+ 8001242:	683a      	ldr	r2, [r7, #0]
+ 8001244:	6879      	ldr	r1, [r7, #4]
+ 8001246:	f7ff ffa1 	bl	800118c <Set_LED>
     }
 }
- 80013c2:	bf00      	nop
- 80013c4:	3788      	adds	r7, #136	@ 0x88
- 80013c6:	46bd      	mov	sp, r7
- 80013c8:	bd80      	pop	{r7, pc}
- 80013ca:	bf00      	nop
- 80013cc:	08004dc0 	.word	0x08004dc0
+ 800124a:	bf00      	nop
+ 800124c:	3788      	adds	r7, #136	@ 0x88
+ 800124e:	46bd      	mov	sp, r7
+ 8001250:	bd80      	pop	{r7, pc}
+ 8001252:	bf00      	nop
+ 8001254:	08004dc0 	.word	0x08004dc0
 
-080013d0 <Set_Brightness>:
+08001258 <Set_Brightness>:
         Set_LED(16+col_num, Red, Green, Blue); //mid, from left
         Set_LED(11-col_num, Red, Green, Blue); //bot, from right
     }
 }
 
 void Set_Brightness(int brightness) {
- 80013d0:	b480      	push	{r7}
- 80013d2:	b085      	sub	sp, #20
- 80013d4:	af00      	add	r7, sp, #0
- 80013d6:	6078      	str	r0, [r7, #4]
+ 8001258:	b480      	push	{r7}
+ 800125a:	b085      	sub	sp, #20
+ 800125c:	af00      	add	r7, sp, #0
+ 800125e:	6078      	str	r0, [r7, #4]
     #if USE_BRIGHTNESS
     if (brightness > 100) brightness = 100;
- 80013d8:	687b      	ldr	r3, [r7, #4]
- 80013da:	2b64      	cmp	r3, #100	@ 0x64
- 80013dc:	dd01      	ble.n	80013e2 <Set_Brightness+0x12>
- 80013de:	2364      	movs	r3, #100	@ 0x64
- 80013e0:	607b      	str	r3, [r7, #4]
+ 8001260:	687b      	ldr	r3, [r7, #4]
+ 8001262:	2b64      	cmp	r3, #100	@ 0x64
+ 8001264:	dd01      	ble.n	800126a <Set_Brightness+0x12>
+ 8001266:	2364      	movs	r3, #100	@ 0x64
+ 8001268:	607b      	str	r3, [r7, #4]
     if (brightness < 0) brightness = 0;
- 80013e2:	687b      	ldr	r3, [r7, #4]
- 80013e4:	2b00      	cmp	r3, #0
- 80013e6:	da01      	bge.n	80013ec <Set_Brightness+0x1c>
- 80013e8:	2300      	movs	r3, #0
- 80013ea:	607b      	str	r3, [r7, #4]
+ 800126a:	687b      	ldr	r3, [r7, #4]
+ 800126c:	2b00      	cmp	r3, #0
+ 800126e:	da01      	bge.n	8001274 <Set_Brightness+0x1c>
+ 8001270:	2300      	movs	r3, #0
+ 8001272:	607b      	str	r3, [r7, #4]
 
     for (int i = 0; i < MAX_LED; i++) {
- 80013ec:	2300      	movs	r3, #0
- 80013ee:	60fb      	str	r3, [r7, #12]
- 80013f0:	e02d      	b.n	800144e <Set_Brightness+0x7e>
+ 8001274:	2300      	movs	r3, #0
+ 8001276:	60fb      	str	r3, [r7, #12]
+ 8001278:	e02d      	b.n	80012d6 <Set_Brightness+0x7e>
         LED_Mod[i][0] = LED_Data[i][0];
- 80013f2:	4a1b      	ldr	r2, [pc, #108]	@ (8001460 <Set_Brightness+0x90>)
- 80013f4:	68fb      	ldr	r3, [r7, #12]
- 80013f6:	f812 1023 	ldrb.w	r1, [r2, r3, lsl #2]
- 80013fa:	4a1a      	ldr	r2, [pc, #104]	@ (8001464 <Set_Brightness+0x94>)
- 80013fc:	68fb      	ldr	r3, [r7, #12]
- 80013fe:	f802 1023 	strb.w	r1, [r2, r3, lsl #2]
+ 800127a:	4a1b      	ldr	r2, [pc, #108]	@ (80012e8 <Set_Brightness+0x90>)
+ 800127c:	68fb      	ldr	r3, [r7, #12]
+ 800127e:	f812 1023 	ldrb.w	r1, [r2, r3, lsl #2]
+ 8001282:	4a1a      	ldr	r2, [pc, #104]	@ (80012ec <Set_Brightness+0x94>)
+ 8001284:	68fb      	ldr	r3, [r7, #12]
+ 8001286:	f802 1023 	strb.w	r1, [r2, r3, lsl #2]
         for (int j = 1; j < 4; j++) {
- 8001402:	2301      	movs	r3, #1
- 8001404:	60bb      	str	r3, [r7, #8]
- 8001406:	e01c      	b.n	8001442 <Set_Brightness+0x72>
+ 800128a:	2301      	movs	r3, #1
+ 800128c:	60bb      	str	r3, [r7, #8]
+ 800128e:	e01c      	b.n	80012ca <Set_Brightness+0x72>
             LED_Mod[i][j] = (LED_Data[i][j] * brightness) / 100;
- 8001408:	4a15      	ldr	r2, [pc, #84]	@ (8001460 <Set_Brightness+0x90>)
- 800140a:	68fb      	ldr	r3, [r7, #12]
- 800140c:	009b      	lsls	r3, r3, #2
- 800140e:	441a      	add	r2, r3
- 8001410:	68bb      	ldr	r3, [r7, #8]
- 8001412:	4413      	add	r3, r2
- 8001414:	781b      	ldrb	r3, [r3, #0]
- 8001416:	461a      	mov	r2, r3
- 8001418:	687b      	ldr	r3, [r7, #4]
- 800141a:	fb02 f303 	mul.w	r3, r2, r3
- 800141e:	4a12      	ldr	r2, [pc, #72]	@ (8001468 <Set_Brightness+0x98>)
- 8001420:	fb82 1203 	smull	r1, r2, r2, r3
- 8001424:	1152      	asrs	r2, r2, #5
- 8001426:	17db      	asrs	r3, r3, #31
- 8001428:	1ad3      	subs	r3, r2, r3
- 800142a:	b2d9      	uxtb	r1, r3
- 800142c:	4a0d      	ldr	r2, [pc, #52]	@ (8001464 <Set_Brightness+0x94>)
- 800142e:	68fb      	ldr	r3, [r7, #12]
- 8001430:	009b      	lsls	r3, r3, #2
- 8001432:	441a      	add	r2, r3
- 8001434:	68bb      	ldr	r3, [r7, #8]
- 8001436:	4413      	add	r3, r2
- 8001438:	460a      	mov	r2, r1
- 800143a:	701a      	strb	r2, [r3, #0]
+ 8001290:	4a15      	ldr	r2, [pc, #84]	@ (80012e8 <Set_Brightness+0x90>)
+ 8001292:	68fb      	ldr	r3, [r7, #12]
+ 8001294:	009b      	lsls	r3, r3, #2
+ 8001296:	441a      	add	r2, r3
+ 8001298:	68bb      	ldr	r3, [r7, #8]
+ 800129a:	4413      	add	r3, r2
+ 800129c:	781b      	ldrb	r3, [r3, #0]
+ 800129e:	461a      	mov	r2, r3
+ 80012a0:	687b      	ldr	r3, [r7, #4]
+ 80012a2:	fb02 f303 	mul.w	r3, r2, r3
+ 80012a6:	4a12      	ldr	r2, [pc, #72]	@ (80012f0 <Set_Brightness+0x98>)
+ 80012a8:	fb82 1203 	smull	r1, r2, r2, r3
+ 80012ac:	1152      	asrs	r2, r2, #5
+ 80012ae:	17db      	asrs	r3, r3, #31
+ 80012b0:	1ad3      	subs	r3, r2, r3
+ 80012b2:	b2d9      	uxtb	r1, r3
+ 80012b4:	4a0d      	ldr	r2, [pc, #52]	@ (80012ec <Set_Brightness+0x94>)
+ 80012b6:	68fb      	ldr	r3, [r7, #12]
+ 80012b8:	009b      	lsls	r3, r3, #2
+ 80012ba:	441a      	add	r2, r3
+ 80012bc:	68bb      	ldr	r3, [r7, #8]
+ 80012be:	4413      	add	r3, r2
+ 80012c0:	460a      	mov	r2, r1
+ 80012c2:	701a      	strb	r2, [r3, #0]
         for (int j = 1; j < 4; j++) {
- 800143c:	68bb      	ldr	r3, [r7, #8]
- 800143e:	3301      	adds	r3, #1
- 8001440:	60bb      	str	r3, [r7, #8]
- 8001442:	68bb      	ldr	r3, [r7, #8]
- 8001444:	2b03      	cmp	r3, #3
- 8001446:	dddf      	ble.n	8001408 <Set_Brightness+0x38>
+ 80012c4:	68bb      	ldr	r3, [r7, #8]
+ 80012c6:	3301      	adds	r3, #1
+ 80012c8:	60bb      	str	r3, [r7, #8]
+ 80012ca:	68bb      	ldr	r3, [r7, #8]
+ 80012cc:	2b03      	cmp	r3, #3
+ 80012ce:	dddf      	ble.n	8001290 <Set_Brightness+0x38>
     for (int i = 0; i < MAX_LED; i++) {
- 8001448:	68fb      	ldr	r3, [r7, #12]
- 800144a:	3301      	adds	r3, #1
- 800144c:	60fb      	str	r3, [r7, #12]
- 800144e:	68fb      	ldr	r3, [r7, #12]
- 8001450:	2b3b      	cmp	r3, #59	@ 0x3b
- 8001452:	ddce      	ble.n	80013f2 <Set_Brightness+0x22>
+ 80012d0:	68fb      	ldr	r3, [r7, #12]
+ 80012d2:	3301      	adds	r3, #1
+ 80012d4:	60fb      	str	r3, [r7, #12]
+ 80012d6:	68fb      	ldr	r3, [r7, #12]
+ 80012d8:	2b3b      	cmp	r3, #59	@ 0x3b
+ 80012da:	ddce      	ble.n	800127a <Set_Brightness+0x22>
         }
     }
     #endif
 }
- 8001454:	bf00      	nop
- 8001456:	bf00      	nop
- 8001458:	3714      	adds	r7, #20
- 800145a:	46bd      	mov	sp, r7
- 800145c:	bc80      	pop	{r7}
- 800145e:	4770      	bx	lr
- 8001460:	200004d4 	.word	0x200004d4
- 8001464:	200005c4 	.word	0x200005c4
- 8001468:	51eb851f 	.word	0x51eb851f
+ 80012dc:	bf00      	nop
+ 80012de:	bf00      	nop
+ 80012e0:	3714      	adds	r7, #20
+ 80012e2:	46bd      	mov	sp, r7
+ 80012e4:	bc80      	pop	{r7}
+ 80012e6:	4770      	bx	lr
+ 80012e8:	200004d4 	.word	0x200004d4
+ 80012ec:	200005c4 	.word	0x200005c4
+ 80012f0:	51eb851f 	.word	0x51eb851f
 
-0800146c <WS2812_Send>:
+080012f4 <WS2812_Send>:
 
 void WS2812_Send(void) {
- 800146c:	b580      	push	{r7, lr}
- 800146e:	b086      	sub	sp, #24
- 8001470:	af00      	add	r7, sp, #0
+ 80012f4:	b580      	push	{r7, lr}
+ 80012f6:	b086      	sub	sp, #24
+ 80012f8:	af00      	add	r7, sp, #0
     uint32_t indx = 0;
- 8001472:	2300      	movs	r3, #0
- 8001474:	617b      	str	r3, [r7, #20]
+ 80012fa:	2300      	movs	r3, #0
+ 80012fc:	617b      	str	r3, [r7, #20]
     uint32_t color;
 
     for (int i = 0; i < MAX_LED; i++) {
- 8001476:	2300      	movs	r3, #0
- 8001478:	613b      	str	r3, [r7, #16]
- 800147a:	e031      	b.n	80014e0 <WS2812_Send+0x74>
+ 80012fe:	2300      	movs	r3, #0
+ 8001300:	613b      	str	r3, [r7, #16]
+ 8001302:	e031      	b.n	8001368 <WS2812_Send+0x74>
         color = ((LED_Mod[i][1] << 16) | (LED_Mod[i][2] << 8) | (LED_Mod[i][3]));
- 800147c:	4a34      	ldr	r2, [pc, #208]	@ (8001550 <WS2812_Send+0xe4>)
- 800147e:	693b      	ldr	r3, [r7, #16]
- 8001480:	009b      	lsls	r3, r3, #2
- 8001482:	4413      	add	r3, r2
- 8001484:	785b      	ldrb	r3, [r3, #1]
- 8001486:	041a      	lsls	r2, r3, #16
- 8001488:	4931      	ldr	r1, [pc, #196]	@ (8001550 <WS2812_Send+0xe4>)
- 800148a:	693b      	ldr	r3, [r7, #16]
- 800148c:	009b      	lsls	r3, r3, #2
- 800148e:	440b      	add	r3, r1
- 8001490:	789b      	ldrb	r3, [r3, #2]
- 8001492:	021b      	lsls	r3, r3, #8
- 8001494:	431a      	orrs	r2, r3
- 8001496:	492e      	ldr	r1, [pc, #184]	@ (8001550 <WS2812_Send+0xe4>)
- 8001498:	693b      	ldr	r3, [r7, #16]
- 800149a:	009b      	lsls	r3, r3, #2
- 800149c:	440b      	add	r3, r1
- 800149e:	78db      	ldrb	r3, [r3, #3]
- 80014a0:	4313      	orrs	r3, r2
- 80014a2:	603b      	str	r3, [r7, #0]
+ 8001304:	4a34      	ldr	r2, [pc, #208]	@ (80013d8 <WS2812_Send+0xe4>)
+ 8001306:	693b      	ldr	r3, [r7, #16]
+ 8001308:	009b      	lsls	r3, r3, #2
+ 800130a:	4413      	add	r3, r2
+ 800130c:	785b      	ldrb	r3, [r3, #1]
+ 800130e:	041a      	lsls	r2, r3, #16
+ 8001310:	4931      	ldr	r1, [pc, #196]	@ (80013d8 <WS2812_Send+0xe4>)
+ 8001312:	693b      	ldr	r3, [r7, #16]
+ 8001314:	009b      	lsls	r3, r3, #2
+ 8001316:	440b      	add	r3, r1
+ 8001318:	789b      	ldrb	r3, [r3, #2]
+ 800131a:	021b      	lsls	r3, r3, #8
+ 800131c:	431a      	orrs	r2, r3
+ 800131e:	492e      	ldr	r1, [pc, #184]	@ (80013d8 <WS2812_Send+0xe4>)
+ 8001320:	693b      	ldr	r3, [r7, #16]
+ 8001322:	009b      	lsls	r3, r3, #2
+ 8001324:	440b      	add	r3, r1
+ 8001326:	78db      	ldrb	r3, [r3, #3]
+ 8001328:	4313      	orrs	r3, r2
+ 800132a:	603b      	str	r3, [r7, #0]
 
         for (int j = 23; j >= 0; j--) {
- 80014a4:	2317      	movs	r3, #23
- 80014a6:	60fb      	str	r3, [r7, #12]
- 80014a8:	e014      	b.n	80014d4 <WS2812_Send+0x68>
+ 800132c:	2317      	movs	r3, #23
+ 800132e:	60fb      	str	r3, [r7, #12]
+ 8001330:	e014      	b.n	800135c <WS2812_Send+0x68>
             pwmData[indx++] = (color & (1 << j)) ? 60 : 30;
- 80014aa:	2201      	movs	r2, #1
- 80014ac:	68fb      	ldr	r3, [r7, #12]
- 80014ae:	fa02 f303 	lsl.w	r3, r2, r3
- 80014b2:	461a      	mov	r2, r3
- 80014b4:	683b      	ldr	r3, [r7, #0]
- 80014b6:	4013      	ands	r3, r2
- 80014b8:	2b00      	cmp	r3, #0
- 80014ba:	d001      	beq.n	80014c0 <WS2812_Send+0x54>
- 80014bc:	213c      	movs	r1, #60	@ 0x3c
- 80014be:	e000      	b.n	80014c2 <WS2812_Send+0x56>
- 80014c0:	211e      	movs	r1, #30
- 80014c2:	697b      	ldr	r3, [r7, #20]
- 80014c4:	1c5a      	adds	r2, r3, #1
- 80014c6:	617a      	str	r2, [r7, #20]
- 80014c8:	4a22      	ldr	r2, [pc, #136]	@ (8001554 <WS2812_Send+0xe8>)
- 80014ca:	f822 1013 	strh.w	r1, [r2, r3, lsl #1]
+ 8001332:	2201      	movs	r2, #1
+ 8001334:	68fb      	ldr	r3, [r7, #12]
+ 8001336:	fa02 f303 	lsl.w	r3, r2, r3
+ 800133a:	461a      	mov	r2, r3
+ 800133c:	683b      	ldr	r3, [r7, #0]
+ 800133e:	4013      	ands	r3, r2
+ 8001340:	2b00      	cmp	r3, #0
+ 8001342:	d001      	beq.n	8001348 <WS2812_Send+0x54>
+ 8001344:	213c      	movs	r1, #60	@ 0x3c
+ 8001346:	e000      	b.n	800134a <WS2812_Send+0x56>
+ 8001348:	211e      	movs	r1, #30
+ 800134a:	697b      	ldr	r3, [r7, #20]
+ 800134c:	1c5a      	adds	r2, r3, #1
+ 800134e:	617a      	str	r2, [r7, #20]
+ 8001350:	4a22      	ldr	r2, [pc, #136]	@ (80013dc <WS2812_Send+0xe8>)
+ 8001352:	f822 1013 	strh.w	r1, [r2, r3, lsl #1]
         for (int j = 23; j >= 0; j--) {
- 80014ce:	68fb      	ldr	r3, [r7, #12]
- 80014d0:	3b01      	subs	r3, #1
- 80014d2:	60fb      	str	r3, [r7, #12]
- 80014d4:	68fb      	ldr	r3, [r7, #12]
- 80014d6:	2b00      	cmp	r3, #0
- 80014d8:	dae7      	bge.n	80014aa <WS2812_Send+0x3e>
+ 8001356:	68fb      	ldr	r3, [r7, #12]
+ 8001358:	3b01      	subs	r3, #1
+ 800135a:	60fb      	str	r3, [r7, #12]
+ 800135c:	68fb      	ldr	r3, [r7, #12]
+ 800135e:	2b00      	cmp	r3, #0
+ 8001360:	dae7      	bge.n	8001332 <WS2812_Send+0x3e>
     for (int i = 0; i < MAX_LED; i++) {
- 80014da:	693b      	ldr	r3, [r7, #16]
- 80014dc:	3301      	adds	r3, #1
- 80014de:	613b      	str	r3, [r7, #16]
- 80014e0:	693b      	ldr	r3, [r7, #16]
- 80014e2:	2b3b      	cmp	r3, #59	@ 0x3b
- 80014e4:	ddca      	ble.n	800147c <WS2812_Send+0x10>
+ 8001362:	693b      	ldr	r3, [r7, #16]
+ 8001364:	3301      	adds	r3, #1
+ 8001366:	613b      	str	r3, [r7, #16]
+ 8001368:	693b      	ldr	r3, [r7, #16]
+ 800136a:	2b3b      	cmp	r3, #59	@ 0x3b
+ 800136c:	ddca      	ble.n	8001304 <WS2812_Send+0x10>
         }
     }
 
     for (int i = 0; i < 50; i++) {
- 80014e6:	2300      	movs	r3, #0
- 80014e8:	60bb      	str	r3, [r7, #8]
- 80014ea:	e009      	b.n	8001500 <WS2812_Send+0x94>
+ 800136e:	2300      	movs	r3, #0
+ 8001370:	60bb      	str	r3, [r7, #8]
+ 8001372:	e009      	b.n	8001388 <WS2812_Send+0x94>
         pwmData[indx++] = 0;
- 80014ec:	697b      	ldr	r3, [r7, #20]
- 80014ee:	1c5a      	adds	r2, r3, #1
- 80014f0:	617a      	str	r2, [r7, #20]
- 80014f2:	4a18      	ldr	r2, [pc, #96]	@ (8001554 <WS2812_Send+0xe8>)
- 80014f4:	2100      	movs	r1, #0
- 80014f6:	f822 1013 	strh.w	r1, [r2, r3, lsl #1]
+ 8001374:	697b      	ldr	r3, [r7, #20]
+ 8001376:	1c5a      	adds	r2, r3, #1
+ 8001378:	617a      	str	r2, [r7, #20]
+ 800137a:	4a18      	ldr	r2, [pc, #96]	@ (80013dc <WS2812_Send+0xe8>)
+ 800137c:	2100      	movs	r1, #0
+ 800137e:	f822 1013 	strh.w	r1, [r2, r3, lsl #1]
     for (int i = 0; i < 50; i++) {
- 80014fa:	68bb      	ldr	r3, [r7, #8]
- 80014fc:	3301      	adds	r3, #1
- 80014fe:	60bb      	str	r3, [r7, #8]
- 8001500:	68bb      	ldr	r3, [r7, #8]
- 8001502:	2b31      	cmp	r3, #49	@ 0x31
- 8001504:	ddf2      	ble.n	80014ec <WS2812_Send+0x80>
+ 8001382:	68bb      	ldr	r3, [r7, #8]
+ 8001384:	3301      	adds	r3, #1
+ 8001386:	60bb      	str	r3, [r7, #8]
+ 8001388:	68bb      	ldr	r3, [r7, #8]
+ 800138a:	2b31      	cmp	r3, #49	@ 0x31
+ 800138c:	ddf2      	ble.n	8001374 <WS2812_Send+0x80>
     }
 
     datasentflag = 0;
- 8001506:	4b14      	ldr	r3, [pc, #80]	@ (8001558 <WS2812_Send+0xec>)
- 8001508:	2200      	movs	r2, #0
- 800150a:	601a      	str	r2, [r3, #0]
+ 800138e:	4b14      	ldr	r3, [pc, #80]	@ (80013e0 <WS2812_Send+0xec>)
+ 8001390:	2200      	movs	r2, #0
+ 8001392:	601a      	str	r2, [r3, #0]
     HAL_TIM_PWM_Start_DMA(&htim1, TIM_CHANNEL_1, (uint32_t *)pwmData, indx);
- 800150c:	697b      	ldr	r3, [r7, #20]
- 800150e:	b29b      	uxth	r3, r3
- 8001510:	4a10      	ldr	r2, [pc, #64]	@ (8001554 <WS2812_Send+0xe8>)
- 8001512:	2100      	movs	r1, #0
- 8001514:	4811      	ldr	r0, [pc, #68]	@ (800155c <WS2812_Send+0xf0>)
- 8001516:	f002 fbcf 	bl	8003cb8 <HAL_TIM_PWM_Start_DMA>
+ 8001394:	697b      	ldr	r3, [r7, #20]
+ 8001396:	b29b      	uxth	r3, r3
+ 8001398:	4a10      	ldr	r2, [pc, #64]	@ (80013dc <WS2812_Send+0xe8>)
+ 800139a:	2100      	movs	r1, #0
+ 800139c:	4811      	ldr	r0, [pc, #68]	@ (80013e4 <WS2812_Send+0xf0>)
+ 800139e:	f002 fc8b 	bl	8003cb8 <HAL_TIM_PWM_Start_DMA>
 
     uint32_t timeout = 100000;
- 800151a:	4b11      	ldr	r3, [pc, #68]	@ (8001560 <WS2812_Send+0xf4>)
- 800151c:	607b      	str	r3, [r7, #4]
+ 80013a2:	4b11      	ldr	r3, [pc, #68]	@ (80013e8 <WS2812_Send+0xf4>)
+ 80013a4:	607b      	str	r3, [r7, #4]
     while(!datasentflag && timeout--);
- 800151e:	bf00      	nop
- 8001520:	4b0d      	ldr	r3, [pc, #52]	@ (8001558 <WS2812_Send+0xec>)
- 8001522:	681b      	ldr	r3, [r3, #0]
- 8001524:	2b00      	cmp	r3, #0
- 8001526:	d104      	bne.n	8001532 <WS2812_Send+0xc6>
- 8001528:	687b      	ldr	r3, [r7, #4]
- 800152a:	1e5a      	subs	r2, r3, #1
- 800152c:	607a      	str	r2, [r7, #4]
- 800152e:	2b00      	cmp	r3, #0
- 8001530:	d1f6      	bne.n	8001520 <WS2812_Send+0xb4>
+ 80013a6:	bf00      	nop
+ 80013a8:	4b0d      	ldr	r3, [pc, #52]	@ (80013e0 <WS2812_Send+0xec>)
+ 80013aa:	681b      	ldr	r3, [r3, #0]
+ 80013ac:	2b00      	cmp	r3, #0
+ 80013ae:	d104      	bne.n	80013ba <WS2812_Send+0xc6>
+ 80013b0:	687b      	ldr	r3, [r7, #4]
+ 80013b2:	1e5a      	subs	r2, r3, #1
+ 80013b4:	607a      	str	r2, [r7, #4]
+ 80013b6:	2b00      	cmp	r3, #0
+ 80013b8:	d1f6      	bne.n	80013a8 <WS2812_Send+0xb4>
 
     if(!timeout) {
- 8001532:	687b      	ldr	r3, [r7, #4]
- 8001534:	2b00      	cmp	r3, #0
- 8001536:	d106      	bne.n	8001546 <WS2812_Send+0xda>
+ 80013ba:	687b      	ldr	r3, [r7, #4]
+ 80013bc:	2b00      	cmp	r3, #0
+ 80013be:	d106      	bne.n	80013ce <WS2812_Send+0xda>
         HAL_TIM_PWM_Stop_DMA(&htim1, TIM_CHANNEL_1);
- 8001538:	2100      	movs	r1, #0
- 800153a:	4808      	ldr	r0, [pc, #32]	@ (800155c <WS2812_Send+0xf0>)
- 800153c:	f002 fd5e 	bl	8003ffc <HAL_TIM_PWM_Stop_DMA>
+ 80013c0:	2100      	movs	r1, #0
+ 80013c2:	4808      	ldr	r0, [pc, #32]	@ (80013e4 <WS2812_Send+0xf0>)
+ 80013c4:	f002 fe1a 	bl	8003ffc <HAL_TIM_PWM_Stop_DMA>
         datasentflag = 1;
- 8001540:	4b05      	ldr	r3, [pc, #20]	@ (8001558 <WS2812_Send+0xec>)
- 8001542:	2201      	movs	r2, #1
- 8001544:	601a      	str	r2, [r3, #0]
+ 80013c8:	4b05      	ldr	r3, [pc, #20]	@ (80013e0 <WS2812_Send+0xec>)
+ 80013ca:	2201      	movs	r2, #1
+ 80013cc:	601a      	str	r2, [r3, #0]
     }
 }
- 8001546:	bf00      	nop
- 8001548:	3718      	adds	r7, #24
- 800154a:	46bd      	mov	sp, r7
- 800154c:	bd80      	pop	{r7, pc}
- 800154e:	bf00      	nop
- 8001550:	200005c4 	.word	0x200005c4
- 8001554:	200006b4 	.word	0x200006b4
- 8001558:	20001258 	.word	0x20001258
- 800155c:	20000060 	.word	0x20000060
- 8001560:	000186a0 	.word	0x000186a0
+ 80013ce:	bf00      	nop
+ 80013d0:	3718      	adds	r7, #24
+ 80013d2:	46bd      	mov	sp, r7
+ 80013d4:	bd80      	pop	{r7, pc}
+ 80013d6:	bf00      	nop
+ 80013d8:	200005c4 	.word	0x200005c4
+ 80013dc:	200006b4 	.word	0x200006b4
+ 80013e0:	20001258 	.word	0x20001258
+ 80013e4:	20000060 	.word	0x20000060
+ 80013e8:	000186a0 	.word	0x000186a0
+
+080013ec <display_spectrum>:
+
+void display_spectrum(void) {
+ 80013ec:	b5f0      	push	{r4, r5, r6, r7, lr}
+ 80013ee:	b087      	sub	sp, #28
+ 80013f0:	af02      	add	r7, sp, #8
+    // Clear all LEDs
+    for(uint8_t i = 0; i < MAX_LED; i++) {
+ 80013f2:	2300      	movs	r3, #0
+ 80013f4:	73fb      	strb	r3, [r7, #15]
+ 80013f6:	e008      	b.n	800140a <display_spectrum+0x1e>
+        Set_LED(i, 0, 0, 0);
+ 80013f8:	7bf8      	ldrb	r0, [r7, #15]
+ 80013fa:	2300      	movs	r3, #0
+ 80013fc:	2200      	movs	r2, #0
+ 80013fe:	2100      	movs	r1, #0
+ 8001400:	f7ff fec4 	bl	800118c <Set_LED>
+    for(uint8_t i = 0; i < MAX_LED; i++) {
+ 8001404:	7bfb      	ldrb	r3, [r7, #15]
+ 8001406:	3301      	adds	r3, #1
+ 8001408:	73fb      	strb	r3, [r7, #15]
+ 800140a:	7bfb      	ldrb	r3, [r7, #15]
+ 800140c:	2b3b      	cmp	r3, #59	@ 0x3b
+ 800140e:	d9f3      	bls.n	80013f8 <display_spectrum+0xc>
+    }
+
+    // Display each frequency band
+    for(uint8_t band = 0; band < FREQ_BANDS; band++) {
+ 8001410:	2300      	movs	r3, #0
+ 8001412:	73bb      	strb	r3, [r7, #14]
+ 8001414:	e08d      	b.n	8001532 <display_spectrum+0x146>
+        // Enhanced scaling for better visualization
+        uint16_t scaled = freq_bands[band] >> 4; // Divide by 16 for scaling
+ 8001416:	7bbb      	ldrb	r3, [r7, #14]
+ 8001418:	4a4d      	ldr	r2, [pc, #308]	@ (8001550 <display_spectrum+0x164>)
+ 800141a:	f832 3013 	ldrh.w	r3, [r2, r3, lsl #1]
+ 800141e:	091b      	lsrs	r3, r3, #4
+ 8001420:	81bb      	strh	r3, [r7, #12]
+        if(scaled > 255) scaled = 255;
+ 8001422:	89bb      	ldrh	r3, [r7, #12]
+ 8001424:	2bff      	cmp	r3, #255	@ 0xff
+ 8001426:	d901      	bls.n	800142c <display_spectrum+0x40>
+ 8001428:	23ff      	movs	r3, #255	@ 0xff
+ 800142a:	81bb      	strh	r3, [r7, #12]
+
+        uint8_t intensity = (uint8_t)scaled;
+ 800142c:	89bb      	ldrh	r3, [r7, #12]
+ 800142e:	71fb      	strb	r3, [r7, #7]
+
+        if(intensity > 10) { // Lower threshold for more sensitivity
+ 8001430:	79fb      	ldrb	r3, [r7, #7]
+ 8001432:	2b0a      	cmp	r3, #10
+ 8001434:	d97a      	bls.n	800152c <display_spectrum+0x140>
+            // Calculate number of LEDs to light in this column (0-3)
+            uint8_t num_leds = (intensity * MATRIX_ROWS) / 255;
+ 8001436:	79fb      	ldrb	r3, [r7, #7]
+ 8001438:	4a46      	ldr	r2, [pc, #280]	@ (8001554 <display_spectrum+0x168>)
+ 800143a:	fb82 1203 	smull	r1, r2, r2, r3
+ 800143e:	1152      	asrs	r2, r2, #5
+ 8001440:	17db      	asrs	r3, r3, #31
+ 8001442:	1ad3      	subs	r3, r2, r3
+ 8001444:	72fb      	strb	r3, [r7, #11]
+            if(num_leds > MATRIX_ROWS) num_leds = MATRIX_ROWS;
+ 8001446:	7afb      	ldrb	r3, [r7, #11]
+ 8001448:	2b03      	cmp	r3, #3
+ 800144a:	d901      	bls.n	8001450 <display_spectrum+0x64>
+ 800144c:	2303      	movs	r3, #3
+ 800144e:	72fb      	strb	r3, [r7, #11]
+
+            // Get color for this band
+            uint8_t r, g, b;
+            get_band_color(band, intensity, &r, &g, &b);
+ 8001450:	1cbc      	adds	r4, r7, #2
+ 8001452:	1cfa      	adds	r2, r7, #3
+ 8001454:	79f9      	ldrb	r1, [r7, #7]
+ 8001456:	7bb8      	ldrb	r0, [r7, #14]
+ 8001458:	1c7b      	adds	r3, r7, #1
+ 800145a:	9300      	str	r3, [sp, #0]
+ 800145c:	4623      	mov	r3, r4
+ 800145e:	f7ff fd75 	bl	8000f4c <get_band_color>
+
+            // Light LEDs from bottom up with gradient effect
+            for(uint8_t led = 0; led < num_leds; led++) {
+ 8001462:	2300      	movs	r3, #0
+ 8001464:	72bb      	strb	r3, [r7, #10]
+ 8001466:	e039      	b.n	80014dc <display_spectrum+0xf0>
+                uint8_t row = MATRIX_ROWS - 1 - led;
+ 8001468:	7abb      	ldrb	r3, [r7, #10]
+ 800146a:	f1c3 0302 	rsb	r3, r3, #2
+ 800146e:	717b      	strb	r3, [r7, #5]
+
+                // Apply brightness gradient (bottom brighter than top)
+                uint8_t gradient = 255 - (led * 60); // Reduce brightness by 60 for each level
+ 8001470:	7abb      	ldrb	r3, [r7, #10]
+ 8001472:	461a      	mov	r2, r3
+ 8001474:	011b      	lsls	r3, r3, #4
+ 8001476:	1ad3      	subs	r3, r2, r3
+ 8001478:	009b      	lsls	r3, r3, #2
+ 800147a:	b2db      	uxtb	r3, r3
+ 800147c:	3b01      	subs	r3, #1
+ 800147e:	713b      	strb	r3, [r7, #4]
+
+                Set_LED_Matrix(row, band,
+ 8001480:	7978      	ldrb	r0, [r7, #5]
+ 8001482:	7bb9      	ldrb	r1, [r7, #14]
+                              (r * gradient) / 255,
+ 8001484:	78fb      	ldrb	r3, [r7, #3]
+ 8001486:	461a      	mov	r2, r3
+ 8001488:	793b      	ldrb	r3, [r7, #4]
+ 800148a:	fb02 f303 	mul.w	r3, r2, r3
+                Set_LED_Matrix(row, band,
+ 800148e:	4a32      	ldr	r2, [pc, #200]	@ (8001558 <display_spectrum+0x16c>)
+ 8001490:	fb82 4203 	smull	r4, r2, r2, r3
+ 8001494:	441a      	add	r2, r3
+ 8001496:	11d2      	asrs	r2, r2, #7
+ 8001498:	17db      	asrs	r3, r3, #31
+ 800149a:	1ad4      	subs	r4, r2, r3
+                              (g * gradient) / 255,
+ 800149c:	78bb      	ldrb	r3, [r7, #2]
+ 800149e:	461a      	mov	r2, r3
+ 80014a0:	793b      	ldrb	r3, [r7, #4]
+ 80014a2:	fb02 f303 	mul.w	r3, r2, r3
+                Set_LED_Matrix(row, band,
+ 80014a6:	4a2c      	ldr	r2, [pc, #176]	@ (8001558 <display_spectrum+0x16c>)
+ 80014a8:	fb82 5203 	smull	r5, r2, r2, r3
+ 80014ac:	441a      	add	r2, r3
+ 80014ae:	11d2      	asrs	r2, r2, #7
+ 80014b0:	17db      	asrs	r3, r3, #31
+ 80014b2:	1ad5      	subs	r5, r2, r3
+                              (b * gradient) / 255);
+ 80014b4:	787b      	ldrb	r3, [r7, #1]
+ 80014b6:	461a      	mov	r2, r3
+ 80014b8:	793b      	ldrb	r3, [r7, #4]
+ 80014ba:	fb02 f303 	mul.w	r3, r2, r3
+                Set_LED_Matrix(row, band,
+ 80014be:	4a26      	ldr	r2, [pc, #152]	@ (8001558 <display_spectrum+0x16c>)
+ 80014c0:	fb82 6203 	smull	r6, r2, r2, r3
+ 80014c4:	441a      	add	r2, r3
+ 80014c6:	11d2      	asrs	r2, r2, #7
+ 80014c8:	17db      	asrs	r3, r3, #31
+ 80014ca:	1ad3      	subs	r3, r2, r3
+ 80014cc:	9300      	str	r3, [sp, #0]
+ 80014ce:	462b      	mov	r3, r5
+ 80014d0:	4622      	mov	r2, r4
+ 80014d2:	f7ff fe8d 	bl	80011f0 <Set_LED_Matrix>
+            for(uint8_t led = 0; led < num_leds; led++) {
+ 80014d6:	7abb      	ldrb	r3, [r7, #10]
+ 80014d8:	3301      	adds	r3, #1
+ 80014da:	72bb      	strb	r3, [r7, #10]
+ 80014dc:	7aba      	ldrb	r2, [r7, #10]
+ 80014de:	7afb      	ldrb	r3, [r7, #11]
+ 80014e0:	429a      	cmp	r2, r3
+ 80014e2:	d3c1      	bcc.n	8001468 <display_spectrum+0x7c>
+            }
+
+            // Show peak with white color
+            uint16_t peak_scaled = peak_bands[band] >> 4;
+ 80014e4:	7bbb      	ldrb	r3, [r7, #14]
+ 80014e6:	4a1d      	ldr	r2, [pc, #116]	@ (800155c <display_spectrum+0x170>)
+ 80014e8:	f832 3013 	ldrh.w	r3, [r2, r3, lsl #1]
+ 80014ec:	091b      	lsrs	r3, r3, #4
+ 80014ee:	813b      	strh	r3, [r7, #8]
+            if(peak_scaled > 255) peak_scaled = 255;
+ 80014f0:	893b      	ldrh	r3, [r7, #8]
+ 80014f2:	2bff      	cmp	r3, #255	@ 0xff
+ 80014f4:	d901      	bls.n	80014fa <display_spectrum+0x10e>
+ 80014f6:	23ff      	movs	r3, #255	@ 0xff
+ 80014f8:	813b      	strh	r3, [r7, #8]
+            uint8_t peak_leds = (peak_scaled * MATRIX_ROWS) / 255;
+ 80014fa:	893b      	ldrh	r3, [r7, #8]
+ 80014fc:	4a15      	ldr	r2, [pc, #84]	@ (8001554 <display_spectrum+0x168>)
+ 80014fe:	fb82 1203 	smull	r1, r2, r2, r3
+ 8001502:	1152      	asrs	r2, r2, #5
+ 8001504:	17db      	asrs	r3, r3, #31
+ 8001506:	1ad3      	subs	r3, r2, r3
+ 8001508:	71bb      	strb	r3, [r7, #6]
+
+            if(peak_leds < MATRIX_ROWS && peak_leds > num_leds) {
+ 800150a:	79bb      	ldrb	r3, [r7, #6]
+ 800150c:	2b02      	cmp	r3, #2
+ 800150e:	d80d      	bhi.n	800152c <display_spectrum+0x140>
+ 8001510:	79ba      	ldrb	r2, [r7, #6]
+ 8001512:	7afb      	ldrb	r3, [r7, #11]
+ 8001514:	429a      	cmp	r2, r3
+ 8001516:	d909      	bls.n	800152c <display_spectrum+0x140>
+                Set_LED_Matrix(MATRIX_ROWS - 1 - peak_leds, band, 255, 255, 255);
+ 8001518:	79bb      	ldrb	r3, [r7, #6]
+ 800151a:	f1c3 0002 	rsb	r0, r3, #2
+ 800151e:	7bb9      	ldrb	r1, [r7, #14]
+ 8001520:	23ff      	movs	r3, #255	@ 0xff
+ 8001522:	9300      	str	r3, [sp, #0]
+ 8001524:	23ff      	movs	r3, #255	@ 0xff
+ 8001526:	22ff      	movs	r2, #255	@ 0xff
+ 8001528:	f7ff fe62 	bl	80011f0 <Set_LED_Matrix>
+    for(uint8_t band = 0; band < FREQ_BANDS; band++) {
+ 800152c:	7bbb      	ldrb	r3, [r7, #14]
+ 800152e:	3301      	adds	r3, #1
+ 8001530:	73bb      	strb	r3, [r7, #14]
+ 8001532:	7bbb      	ldrb	r3, [r7, #14]
+ 8001534:	2b09      	cmp	r3, #9
+ 8001536:	f67f af6e 	bls.w	8001416 <display_spectrum+0x2a>
+            }
+        }
+    }
+
+    Set_Brightness(current_brightness);
+ 800153a:	4b09      	ldr	r3, [pc, #36]	@ (8001560 <display_spectrum+0x174>)
+ 800153c:	681b      	ldr	r3, [r3, #0]
+ 800153e:	4618      	mov	r0, r3
+ 8001540:	f7ff fe8a 	bl	8001258 <Set_Brightness>
+    WS2812_Send();
+ 8001544:	f7ff fed6 	bl	80012f4 <WS2812_Send>
+}
+ 8001548:	bf00      	nop
+ 800154a:	3714      	adds	r7, #20
+ 800154c:	46bd      	mov	sp, r7
+ 800154e:	bdf0      	pop	{r4, r5, r6, r7, pc}
+ 8001550:	2000046c 	.word	0x2000046c
+ 8001554:	60606061 	.word	0x60606061
+ 8001558:	80808081 	.word	0x80808081
+ 800155c:	20000494 	.word	0x20000494
+ 8001560:	20000004 	.word	0x20000004
 
 08001564 <HAL_TIM_PWM_PulseFinishedCallback>:
 
@@ -2891,7 +2891,7 @@ int main(void)
  800161a:	2300      	movs	r3, #0
  800161c:	2200      	movs	r2, #0
  800161e:	2100      	movs	r1, #0
- 8001620:	f7ff fe70 	bl	8001304 <Set_LED>
+ 8001620:	f7ff fdb4 	bl	800118c <Set_LED>
   for(uint8_t i = 0; i < MAX_LED; i++) {
  8001624:	79bb      	ldrb	r3, [r7, #6]
  8001626:	3301      	adds	r3, #1
@@ -2902,9 +2902,9 @@ int main(void)
   }
   Set_Brightness(0);
  8001630:	2000      	movs	r0, #0
- 8001632:	f7ff fecd 	bl	80013d0 <Set_Brightness>
+ 8001632:	f7ff fe11 	bl	8001258 <Set_Brightness>
   WS2812_Send();
- 8001636:	f7ff ff19 	bl	800146c <WS2812_Send>
+ 8001636:	f7ff fe5d 	bl	80012f4 <WS2812_Send>
 //  LCD_Parallel_Print("Range:200-4000Hz");
 //  LCD_Parallel_SetCursor(1, 0);
 //  LCD_Parallel_Print("Res:78Hz/bin");
@@ -2979,7 +2979,7 @@ int main(void)
         
         // Display on LEDs
         display_spectrum();
- 8001696:	f7ff fd79 	bl	800118c <display_spectrum>
+ 8001696:	f7ff fea9 	bl	80013ec <display_spectrum>
     sample_audio();
  800169a:	e7d3      	b.n	8001644 <main+0xb4>
  800169c:	08004e38 	.word	0x08004e38
