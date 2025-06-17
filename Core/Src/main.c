@@ -2,7 +2,7 @@
 /**
   ******************************************************************************
   * @file           : main.c
-  * @brief          : Main program body
+  * @brief          : FFT Audio Spectrum Analyzer - 200Hz to 4000Hz
   ******************************************************************************
   * @attention
   *
@@ -29,116 +29,102 @@
 #include <string.h>
 /* USER CODE END Includes */
 
-/* Private typedef -----------------------------------------------------------*/
-/* USER CODE BEGIN PTD */
-
-/* USER CODE END PTD */
-
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define MAX_LED 60
 #define USE_BRIGHTNESS 1
 #define DEFAULT_BRIGHTNESS 10
 
-// Keypad defines
-#define KEYPAD_ROWS 4
-#define KEYPAD_COLS 4
+// FFT Configuration - Tối ưu cho dải 200Hz-4000Hz
+#define FFT_SIZE 128       // Tăng lên 128 để có độ phân giải tốt hơn
+#define FFT_SIZE_LOG2 7    // log2(128) = 7
+#define SAMPLE_RATE 10000  // 10kHz sampling để cover 4000Hz (Nyquist)
+#define FREQ_BANDS 10      // 10 cột LED
+#define NOISE_FLOOR 25     // Ngưỡng nhiễu thấp hơn
 
-// Effect states - Updated for 5 modes: fade, rainbow, run, flashing, music
-#define EFFECT_FADE      0  // Fade effect
-#define EFFECT_RAINBOW   1  // Rainbow effect (no color change needed)
-#define EFFECT_RUN       2  // Pixel run effect
-#define EFFECT_FLASHING  3  // Flashing effect
-#define EFFECT_OFF       4
-#define EFFECT_MUSIC     5  // Music reactive effect
-#define MAX_EFFECTS      6
+// Target frequency range
+#define MIN_FREQ 200       // 200Hz
+#define MAX_FREQ 4000      // 4000Hz
+#define FREQ_RESOLUTION (SAMPLE_RATE / FFT_SIZE)  // ~78.125 Hz per bin
 
-// Color definitions
-#define COLOR_BLUE   0  // Blue
-#define COLOR_RED    1  // Red
-#define COLOR_PINK   2  // Pink
-#define COLOR_GREEN  3  // Green
-#define COLOR_PURPLE 4  // Purple
-#define COLOR_YELLOW 5  // Yellow
-#define COLOR_CYAN   6  // Cyan
-#define COLOR_WHITE  7  // White
-#define COLOR_ORANGE 8  // Orange
-#define MAX_COLORS   9
+// Calculate bin indices for target frequency range
+#define MIN_BIN (MIN_FREQ / FREQ_RESOLUTION)      // Bin ~2.56 ≈ 3
+#define MAX_BIN (MAX_FREQ / FREQ_RESOLUTION)      // Bin ~51.2 ≈ 51
+#define USEFUL_BINS (MAX_BIN - MIN_BIN + 1)       // ~48 bins
 
-// Color values [R, G, B]
-int color_values[MAX_COLORS][3] = {
-    {0, 100, 255},    // Blue
-    {255, 0, 0},      // Red
-    {255, 20, 147},   // Pink
-    {0, 255, 0},      // Green
-    {128, 0, 128},    // Purple
-    {255, 255, 0},    // Yellow
-    {0, 255, 255},    // Cyan
-    {255, 255, 255},  // White
-    {255, 165, 0}     // Orange
-};
+// Matrix LED definitions
+#define MATRIX_ROWS 3
+#define MATRIX_COLS 10
 
-// GYMAX4466 Sound Detection
-#define MUSIC_OUT_PORT     GPIOC
-#define MUSIC_OUT_PIN      GPIO_PIN_15
-
-// Thêm vào phần khai báo biến toàn cục
-#define BASE_FREQ 200
-#define MAX_FREQ 2000
-
-// Thêm vào phần định nghĩa #define
-#define FREQ_COLUMNS 10  // 10 cột LED
-#define FREQ_MIN 200
-#define FREQ_MAX 2000
-#define FREQ_STEP ((FREQ_MAX - FREQ_MIN) / FREQ_COLUMNS)  // 180Hz mỗi cột
-#define MIN_INTENSITY 0.0f  // Đổi từ 0.1f xuống 0.0f để tắt hoàn toàn khi không có âm thanh
-
-// Thêm biến toàn cục để lưu trạng thái trước đó
-#define SMOOTHING_FACTOR 0.3f  // Hệ số làm mượt (0-1)
-static float prev_intensities[FREQ_COLUMNS] = {0};  // Khởi tạo tất cả về 0
+// Processing parameters
+#define SMOOTHING_FACTOR 1.0f  // Tăng để mượt hơn
+#define AGC_FACTOR 0.9f         // AGC mạnh hơn
+#define PEAK_HOLD_TIME 300      // Giảm thời gian hold peak
 
 /* USER CODE END PD */
 
-/* Private macro -------------------------------------------------------------*/
-/* USER CODE BEGIN PM */
-
-/* USER CODE END PM */
-
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
-
 TIM_HandleTypeDef htim1;
+TIM_HandleTypeDef htim3;
 DMA_HandleTypeDef hdma_tim1_ch1;
+DMA_HandleTypeDef hdma_adc1;
 
 /* USER CODE BEGIN PV */
 uint32_t var = 0;
-// LCD display variables
-volatile int lcd_update_needed = 1;
-uint32_t last_lcd_update = 0;
-#define LCD_UPDATE_INTERVAL 500  // Update LCD every 500ms
 
-// Khai báo biến toàn cục
-volatile int mn = 5000, mx = 0, avg = 0, cnt = 0;
+// FFT Variables - Tăng kích thước cho độ phân giải tốt hơn
+int16_t adc_buffer[FFT_SIZE];
+int16_t fft_real[FFT_SIZE];
+int16_t fft_imag[FFT_SIZE];
+uint16_t magnitude[FFT_SIZE/2];
+uint16_t freq_bands[FREQ_BANDS];
+uint16_t prev_bands[FREQ_BANDS];
+uint16_t peak_bands[FREQ_BANDS];
+uint32_t peak_time[FREQ_BANDS];
 
-// Khai báo prototype của hàm
-void reset_sound_stats(void);
+// Sampling variables
+uint8_t sample_index = 0;
+volatile uint8_t fft_ready = 0;
+uint16_t max_magnitude = 0;
 
-int calculate_frequency(int adc_value) {
-    if (adc_value < 1700) return 0;  // Dưới ngưỡng phát hiện
-    if (adc_value > 4000) return 0;  // Trên ngưỡng đo
+// AGC variables
+uint16_t gain_factor = 256;   // Q8.8 format
+uint16_t signal_rms = 0;
 
-    // Công thức tính tần số dựa trên ADC value
-    // Dựa vào pattern: ADC value tăng theo log của tần số
-    // Công thức: f = BASE_FREQ * (1 + k * log(ADC/BASE_ADC))
-    float normalized_value = (float)(adc_value - 1700) / (4000 - 1700);
-    int estimated_freq = BASE_FREQ + (int)(normalized_value * 1800); // 1800 = 2000 - 200
+// LED Control
+uint8_t LED_Data[MAX_LED][4];
+uint8_t LED_Mod[MAX_LED][4];
+uint16_t pwmData[(24*MAX_LED)+50];
+int datasentflag = 0;
+volatile int current_brightness = 50;
 
-    // Giới hạn tần số trong khoảng hợp lệ
-    if (estimated_freq < BASE_FREQ) estimated_freq = BASE_FREQ;
-    if (estimated_freq > MAX_FREQ) estimated_freq = MAX_FREQ;
+// Bit-reverse lookup table for FFT 128
+const uint8_t bit_reverse_7[128] = {
+    0, 64, 32, 96, 16, 80, 48, 112, 8, 72, 40, 104, 24, 88, 56, 120,
+    4, 68, 36, 100, 20, 84, 52, 116, 12, 76, 44, 108, 28, 92, 60, 124,
+    2, 66, 34, 98, 18, 82, 50, 114, 10, 74, 42, 106, 26, 90, 58, 122,
+    6, 70, 38, 102, 22, 86, 54, 118, 14, 78, 46, 110, 30, 94, 62, 126,
+    1, 65, 33, 97, 17, 81, 49, 113, 9, 73, 41, 105, 25, 89, 57, 121,
+    5, 69, 37, 101, 21, 85, 53, 117, 13, 77, 45, 109, 29, 93, 61, 125,
+    3, 67, 35, 99, 19, 83, 51, 115, 11, 75, 43, 107, 27, 91, 59, 123,
+    7, 71, 39, 103, 23, 87, 55, 119, 15, 79, 47, 111, 31, 95, 63, 127
+};
 
-    return estimated_freq;
-}
+// Extended sine/cosine lookup tables for 128-point FFT
+const int16_t sin_table[32] = {
+    0, 6393, 12539, 18204, 23170, 27245, 30273, 32137,
+    32767, 32137, 30273, 27245, 23170, 18204, 12539, 6393,
+    0, -6393, -12539, -18204, -23170, -27245, -30273, -32137,
+    -32767, -32137, -30273, -27245, -23170, -18204, -12539, -6393
+};
+
+const int16_t cos_table[32] = {
+    32767, 32137, 30273, 27245, 23170, 18204, 12539, 6393,
+    0, -6393, -12539, -18204, -23170, -27245, -30273, -32137,
+    -32767, -32137, -30273, -27245, -23170, -18204, -12539, -6393,
+    0, 6393, 12539, 18204, 23170, 27245, 30273, 32137
+};
 
 /* USER CODE END PV */
 
@@ -150,631 +136,383 @@ static void MX_TIM1_Init(void);
 static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
 
+/* FFT Functions
+void fft_bit_reverse(void);
+void fft_butterfly(uint8_t stage, uint8_t step);
+void perform_fft(void);
+void calculate_magnitude(void);
+void process_frequency_bands(void);
+void apply_agc(void);
+
+// LED Functions
+void Set_LED(int LEDnum, int Red, int Green, int Blue);
+void Set_LED_Matrix(int row, int col, int Red, int Green, int Blue);
+void Set_LED_Col(int col_num, int Red, int Green, int Blue);
+void Set_Brightness(int brightness);
+void WS2812_Send(void);
+
+// Audio Processing
+void sample_audio(void);
+void display_spectrum(void);
+void get_band_color(uint8_t band, uint8_t intensity, uint8_t* r, uint8_t* g, uint8_t* b);
+*/
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-// Function to convert integer to string
-char* int_to_string(int num, char* str) {
-    int i = 0;
-    int is_negative = 0;
+// Fast integer square root for magnitude calculation
+uint16_t isqrt(uint32_t n) {
+    if (n == 0) return 0;
     
-    // Handle negative numbers
-    if (num < 0) {
-        is_negative = 1;
-        num = -num;
+    uint16_t x = n;
+    uint16_t y = (x + 1) / 2;
+    
+    while (y < x) {
+        x = y;
+        y = (x + n / x) / 2;
     }
-    
-    // Handle zero
-    if (num == 0) {
-        str[i++] = '0';
-        str[i] = '\0';
-        return str;
-    }
-    
-    // Convert number to string in reverse order
-    while (num > 0) {
-        str[i++] = num % 10 + '0';
-        num = num / 10;
-    }
-    
-    // Add negative sign if needed
-    if (is_negative) {
-        str[i++] = '-';
-    }
-    
-    // Reverse the string
-    int start = 0;
-    int end = i - 1;
-    while (start < end) {
-        char temp = str[start];
-        str[start] = str[end];
-        str[end] = temp;
-        start++;
-        end--;
-    }
-    
-    // Add null terminator
-    str[i] = '\0';
-    return str;
+    return x;
 }
 
-uint8_t LED_Data[MAX_LED][4];
-uint8_t LED_Mod[MAX_LED][4];
-
-int datasentflag = 0;
-
-// Keypad variables - Reversed column order to avoid PA3 issue
-GPIO_TypeDef* keypad_row_ports[KEYPAD_ROWS] = {GPIOA, GPIOA, GPIOA, GPIOA};
-uint16_t keypad_row_pins[KEYPAD_ROWS] = {GPIO_PIN_4, GPIO_PIN_5, GPIO_PIN_6, GPIO_PIN_7}; // Row 0,1,2,3
-GPIO_TypeDef* keypad_col_ports[KEYPAD_COLS] = {GPIOA, GPIOA, GPIOA, GPIOA};
-uint16_t keypad_col_pins[KEYPAD_COLS] = {GPIO_PIN_0, GPIO_PIN_1, GPIO_PIN_2, GPIO_PIN_3}; // Col 0,1,2,3 (PA0,PA1,PA2,PA3)
-
-// Keypad layout - Updated for reversed column order
-char keypad_layout[KEYPAD_ROWS][KEYPAD_COLS] = {
-    {'3', '2', '1', '0'},    // S3, S2, S1, S0 (reversed)
-    {'7', '6', '5', '4'},    // S7, S6, S5, S4
-    {'B', 'A', '9', '8'},    // S11, S10, S9, S8
-    {'F', 'E', 'D', 'C'}     // S15, S14, S13, S12
-};
-
-// Effect control variables
-volatile int current_effect = EFFECT_FLASHING;
-volatile int effect_changed = 1;
-volatile int effect_running = 0;
-
-// Color and speed control
-volatile int current_color = COLOR_BLUE;  // Start with blue
-volatile int current_speed = 5;           // Speed from 1 (slow) to 10 (fast)
-volatile int current_brightness = 50;     // Brightness from 1 (dim) to 100 (bright)
-
-void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim) {
-	HAL_TIM_PWM_Stop_DMA(&htim1, TIM_CHANNEL_1);
-	datasentflag = 1;
-}
-
-// Keypad functions
-void Keypad_Init(void) {
-    GPIO_InitTypeDef GPIO_InitStruct = {0};
-
-    // Enable GPIOA clock
-    __HAL_RCC_GPIOA_CLK_ENABLE();
-
-    // Configure row pins as output
-    for(int i = 0; i < KEYPAD_ROWS; i++) {
-        GPIO_InitStruct.Pin = keypad_row_pins[i];
-        GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-        GPIO_InitStruct.Pull = GPIO_NOPULL;
-        GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-        HAL_GPIO_Init(keypad_row_ports[i], &GPIO_InitStruct);
-        HAL_GPIO_WritePin(keypad_row_ports[i], keypad_row_pins[i], GPIO_PIN_SET);
-    }
-
-    // Configure column pins as input with pull-up
-    for(int i = 0; i < KEYPAD_COLS; i++) {
-        GPIO_InitStruct.Pin = keypad_col_pins[i];
-        GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-        GPIO_InitStruct.Pull = GPIO_PULLUP;
-        HAL_GPIO_Init(keypad_col_ports[i], &GPIO_InitStruct);
-    }
-}
-
-void Update_LCD_Display(void) {
-    // Effect names
-    const char* effect_names[] = {"Fade", "Rainbow", "Run", "Flash", "Off", "Music"};
-    const char* color_names[] = {"Blue", "Red", "Pink", "Green", "Purple", "Yellow", "Cyan", "White", "Orange"};
-
-    // Display current effect
-    if(current_effect < MAX_EFFECTS) {
-        LCD_Parallel_DisplayEffect(effect_names[current_effect]);
-    }
-
-    // Display status (color, speed, brightness)
-    if(current_effect == EFFECT_RAINBOW) {
-        LCD_Parallel_DisplayStatus("Rainbow", current_speed, current_brightness);
-    } else if(current_effect == EFFECT_OFF) {
-        LCD_Parallel_DisplayStatus("OFF", 0, 0);
-    } else if(current_color < MAX_COLORS) {
-        LCD_Parallel_DisplayStatus(color_names[current_color], current_speed, current_brightness);
-    }
-}
-
-char Keypad_Read(void) {
-    for(int row = 0; row < KEYPAD_ROWS; row++) {
-        // Set current row LOW, others HIGH
-        for(int i = 0; i < KEYPAD_ROWS; i++) {
-            if(i == row) {
-                HAL_GPIO_WritePin(keypad_row_ports[i], keypad_row_pins[i], GPIO_PIN_RESET);
-            } else {
-                HAL_GPIO_WritePin(keypad_row_ports[i], keypad_row_pins[i], GPIO_PIN_SET);
-            }
+// Bit-reverse for 128-point FFT
+void fft_bit_reverse(void) {
+    for(uint8_t i = 0; i < FFT_SIZE; i++) {
+        uint8_t j = bit_reverse_7[i];
+        if(i < j) {
+            // Swap real parts
+            int16_t temp = fft_real[i];
+            fft_real[i] = fft_real[j];
+            fft_real[j] = temp;
+            
+            // Swap imaginary parts
+            temp = fft_imag[i];
+            fft_imag[i] = fft_imag[j];
+            fft_imag[j] = temp;
         }
+    }
+}
 
-        HAL_Delay(1); // Giảm delay xuống 1ms
+// Get twiddle factors from extended lookup table
+void get_twiddle(uint8_t angle_idx, int16_t* cos_val, int16_t* sin_val) {
+    *cos_val = cos_table[angle_idx & 31];
+    *sin_val = sin_table[angle_idx & 31];
+}
 
-        // Read columns
-        for(int col = 0; col < KEYPAD_COLS; col++) {
-            if(HAL_GPIO_ReadPin(keypad_col_ports[col], keypad_col_pins[col]) == GPIO_PIN_RESET) {
-                // Button pressed, wait for release
-                while(HAL_GPIO_ReadPin(keypad_col_ports[col], keypad_col_pins[col]) == GPIO_PIN_RESET) {
-                    HAL_Delay(5); // Giảm delay xuống 5ms
+// FFT butterfly operation
+void fft_butterfly(uint8_t stage, uint8_t step) {
+    uint8_t half_step = step >> 1;
+    
+    for(uint8_t i = 0; i < FFT_SIZE; i += step) {
+        for(uint8_t j = 0; j < half_step; j++) {
+            uint8_t idx1 = i + j;
+            uint8_t idx2 = idx1 + half_step;
+            
+            // Calculate twiddle factor index
+            uint8_t angle_idx = (j << (FFT_SIZE_LOG2 - stage - 1)) & 31;
+            int16_t cos_val, sin_val;
+            get_twiddle(angle_idx, &cos_val, &sin_val);
+            
+            // Complex multiplication with Q15 arithmetic
+            int32_t temp_real = ((int32_t)fft_real[idx2] * cos_val + 
+                                (int32_t)fft_imag[idx2] * sin_val) >> 15;
+            int32_t temp_imag = ((int32_t)fft_imag[idx2] * cos_val - 
+                                (int32_t)fft_real[idx2] * sin_val) >> 15;
+            
+            // Butterfly operation
+            int16_t real1 = fft_real[idx1];
+            int16_t imag1 = fft_imag[idx1];
+            
+            fft_real[idx1] = real1 + (int16_t)temp_real;
+            fft_imag[idx1] = imag1 + (int16_t)temp_imag;
+            fft_real[idx2] = real1 - (int16_t)temp_real;
+            fft_imag[idx2] = imag1 - (int16_t)temp_imag;
+        }
+    }
+}
+
+// Main FFT computation
+void perform_fft(void) {
+    // Bit-reverse input
+    fft_bit_reverse();
+    
+    // Perform FFT stages
+    for(uint8_t stage = 0; stage < FFT_SIZE_LOG2; stage++) {
+        uint8_t step = 1 << (stage + 1);
+        fft_butterfly(stage, step);
+    }
+}
+
+// Calculate magnitude using optimized method
+void calculate_magnitude(void) {
+    max_magnitude = 0;
+    
+    for(uint8_t i = 1; i < FFT_SIZE/2; i++) { // Skip DC component
+        int32_t real = fft_real[i];
+        int32_t imag = fft_imag[i];
+        
+        // Fast magnitude approximation
+        int32_t abs_real = (real < 0) ? -real : real;
+        int32_t abs_imag = (imag < 0) ? -imag : imag;
+        
+        // |z| ≈ max(|a|,|b|) + 0.5*min(|a|,|b|)
+        int32_t max_val = (abs_real > abs_imag) ? abs_real : abs_imag;
+        int32_t min_val = (abs_real < abs_imag) ? abs_real : abs_imag;
+        
+        magnitude[i] = (uint16_t)(max_val + (min_val >> 1));
+        
+        if(magnitude[i] > max_magnitude) {
+            max_magnitude = magnitude[i];
+        }
+    }
+}
+
+// Apply automatic gain control
+void apply_agc(void) {
+    if(max_magnitude > 0) {
+        // Target amplitude (Q15)
+        uint16_t target = 16384; // 50% of max
+        
+        // Calculate new gain factor
+        if(max_magnitude > target) {
+            gain_factor = (gain_factor * AGC_FACTOR * target) / max_magnitude / AGC_FACTOR;
+        } else if(max_magnitude < target/2) {
+            gain_factor = (gain_factor * target) / max_magnitude;
+        }
+        
+        // Limit gain factor
+        if(gain_factor > 2048) gain_factor = 2048; // Max 8x gain
+        if(gain_factor < 64) gain_factor = 64;     // Min 0.25x gain
+        
+        // Apply gain to magnitude array
+        for(uint8_t i = 1; i < FFT_SIZE/2; i++) {
+            uint32_t temp = (uint32_t)magnitude[i] * gain_factor;
+            magnitude[i] = (temp >> 8); // Q8.8 to Q16
+            if(magnitude[i] > 32767) magnitude[i] = 32767;
+        }
+    }
+}
+
+// Process frequency bands optimized for 200Hz-4000Hz
+void process_frequency_bands(void) {
+    uint32_t current_time = HAL_GetTick();
+    
+    // Define frequency band ranges for 200Hz-4000Hz (logarithmic distribution)
+    const uint8_t band_ranges[FREQ_BANDS][2] = {
+        {3, 5},    // 200-390Hz     (Low Bass)
+        {5, 7},    // 390-547Hz     (Bass)
+        {7, 10},   // 547-781Hz     (Low Mid)
+        {10, 14},  // 781-1094Hz    (Mid)
+        {14, 19},  // 1094-1484Hz   (High Mid)
+        {19, 25},  // 1484-1953Hz   (Presence)
+        {25, 32},  // 1953-2500Hz   (High)
+        {32, 40},  // 2500-3125Hz   (Treble)
+        {40, 48},  // 3125-3750Hz   (High Treble)
+        {48, 51}   // 3750-4000Hz   (Air)
+    };
+    
+    for(uint8_t band = 0; band < FREQ_BANDS; band++) {
+        uint32_t band_sum = 0;
+        uint8_t bin_count = 0;
+        
+        // Sum magnitudes in frequency band
+        for(uint8_t bin = band_ranges[band][0]; bin <= band_ranges[band][1]; bin++) {
+            if(bin < FFT_SIZE/2) {
+                // Apply frequency weighting for better visualization
+                uint16_t weighted_mag = magnitude[bin];
+                
+                // Boost mid frequencies (1-3kHz) slightly
+                if(bin >= 13 && bin <= 38) { // ~1000-3000Hz
+                    weighted_mag = (weighted_mag * 120) / 100;
                 }
-                HAL_Delay(20); // Giảm debounce delay xuống 20ms
-                return keypad_layout[row][col];
+                
+                band_sum += weighted_mag;
+                bin_count++;
             }
         }
-    }
-    return 0; // No key pressed
-}
-
-void Process_Keypad_Input(char key) {
-    switch(key) {
-        // Effects
-        case '1':  // S1 - Fade effect
-            current_effect = EFFECT_FADE;
-            effect_changed = 1;
-            lcd_update_needed = 1;
-            break;
-        case '5':  // S5 - Rainbow effect
-            current_effect = EFFECT_RAINBOW;
-            effect_changed = 1;
-            lcd_update_needed = 1;
-            break;
-        case '9':  // S9 - Run effect
-            current_effect = EFFECT_RUN;
-            effect_changed = 1;
-            lcd_update_needed = 1;
-            break;
-        case 'D':  // S13 - Flashing effect
-            current_effect = EFFECT_FLASHING;
-            effect_changed = 1;
-            lcd_update_needed = 1;
-            break;
-
-        // Speed control
-        case '2':  // S2 - Decrease speed
-            if(current_speed > 1) current_speed--;
-            lcd_update_needed = 1;
-            break;
-        case '3':  // S3 - Increase speed
-            if(current_speed < 10) current_speed++;
-            lcd_update_needed = 1;
-            break;
-
-        // Brightness control
-        case '6':  // S6 - Decrease brightness
-            current_brightness -= 10;
-            if(current_brightness < 1) current_brightness = 1;
-            lcd_update_needed = 1;
-            break;
-        case '7':  // S7 - Increase brightness
-            current_brightness += 10;
-            if(current_brightness > 100) current_brightness = 100;
-            lcd_update_needed = 1;
-            break;
-
-        // Color and control
-        case 'A':  // S10 - Change color (not for Rainbow)
-            if(current_effect != EFFECT_RAINBOW) {
-                current_color = (current_color + 1) % MAX_COLORS;
-                lcd_update_needed = 1;
-            }
-            break;
-        case 'E':  // S14 - Music mode
-            current_effect = EFFECT_MUSIC;
-            effect_changed = 1;
-           // music_mode_active = 1;
-            lcd_update_needed = 1;
-            break;
-        case 'F':  // S15 - Reset stats
-            reset_sound_stats();
-            lcd_update_needed = 1;
-            break;
-
-        // Disabled problematic buttons
-        case '0':  // S0 - Disabled (problematic)
-        case '4':  // S4 - Disabled (problematic)
-        case '8':  // S8 - Disabled (problematic)
-        case 'C':  // S12 - Disabled (problematic)
-        default:
-            // Do nothing for problematic keys and others
-            break;
-    }
-}
-
-void Set_LED (int LEDnum, int Red, int Green, int Blue) {
-	LED_Data[LEDnum][0] = LEDnum;
-	LED_Data[LEDnum][1] = Green;
-	LED_Data[LEDnum][2] = Red;
-	LED_Data[LEDnum][3] = Blue;
-}
-
-// Function to set all LEDs to the same color
-void Set_All_LEDs_Same_Color(int Red, int Green, int Blue) {
-    for (int i = 0; i < MAX_LED; i++) {
-        Set_LED(i, Red, Green, Blue);
-    }
-}
-
-void Set_LED_Col (int col_num, int Red, int Green, int Blue) {
-	Set_LED(40-col_num, Red, Green, Blue); //top, from right
-	Set_LED(16+col_num, Red, Green, Blue); //mid, from left
-	Set_LED(11-col_num, Red, Green, Blue);  //bot, from right
-}
-
-void Set_LED_Row (int row_num, int Red, int Green, int Blue) {
-	switch(row_num){
-	case 0:
-		for (int i = 40; i >= 31; --i)
-			Set_LED(i, Red, Green, Blue);
-		break;
-	case 1:
-		for (int i = 16; i <= 25; ++i)
-			Set_LED(i, Red, Green, Blue);
-		break;
-	case 2:
-		for (int i = 11; i >= 2; --i)
-			Set_LED(i, Red, Green, Blue);
-		break;
-	}
-}
-
-void Set_LED_Matrix (int row, int col, int Red, int Green, int Blue) {
-	int LED_Matrix[3][10] = {
-			{40, 39, 38, 37, 36, 35, 34, 33, 32, 31},
-			{16, 17, 18, 19, 20, 21, 22, 23, 24, 25},
-			{11, 10,  9,  8,  7,  6,  5,  4,  3,  2},
-	};
-	Set_LED(LED_Matrix[row][col], Red, Green, Blue);
-}
-
-void Set_Brightness (int brightness) {
-#if USE_BRIGHTNESS
-
-	if (brightness > 100) brightness = 100;
-	if (brightness < 0) brightness = 0;
-
-	for (int i=0; i < MAX_LED; i++) {
-		LED_Mod[i][0] = LED_Data[i][0];
-		for (int j = 1; j < 4; ++j) {
-			// Simple percentage calculation: brightness from 0-100%
-			LED_Mod[i][j] = (LED_Data[i][j] * brightness) / 100;
-		}
-	}
-
-#endif
-}
-
-uint16_t pwmData[(24*MAX_LED)+50];
-
-//void send(int Green, int Red, int Blue) {
-//	uint32_t data = (Green<<16) | (Red<<8) | Blue;
-//
-//	for (int i = 23; i >= 0; i--) {
-//		if (data&(1<<i)) pwmData[i] = 60;
-//		else pwmData[i] = 30;
-//	}
-//
-//	HAL_TIM_PWM_Start_DMA(&htim1, TIM_CHANNEL_1, (uint32_t *)pwmData, 24);
-//}
-
-
-void WS2812_Send (void) {
-	uint32_t indx = 0;
-	uint32_t color;
-
-	for (int i = 0; i < MAX_LED; ++i) {
-		color = ((LED_Mod[i][1] << 16) | (LED_Mod[i][2] << 8) | (LED_Mod[i][3]));
-
-		for (int j = 23; j >= 0; j--) {
-			if (color&(1<<j)) {
-				pwmData[indx] = 60;
-			} else {
-				pwmData[indx] = 30;
-			}
-
-			indx++;
-		}
-	}
-
-	for (int i = 0; i < 50; ++i) {
-		pwmData[indx] = 0;
-		indx++;
-	}
-
-	// Reset flag before starting DMA
-	datasentflag = 0;
-
-	HAL_TIM_PWM_Start_DMA(&htim1, TIM_CHANNEL_1, (uint32_t *)pwmData, indx);
-
-	// Add timeout to prevent infinite loop
-	uint32_t timeout = 1000000;  // Adjust timeout value
-	while(!datasentflag && timeout > 0) {
-		timeout--;
-	}
-
-	// Force stop if timeout occurred
-	if (timeout == 0) {
-		HAL_TIM_PWM_Stop_DMA(&htim1, TIM_CHANNEL_1);
-		datasentflag = 1;
-	}
-
-	datasentflag = 0;
-}
-
-#define LED_DELAY 10
-
-void Fade_Effect (int Red, int Green, int Blue, int speed) { //speed 1 -> 10
-	if (speed > 10) speed = 10;
-	if (speed < 1)	speed = 1;
-
-	Set_All_LEDs_Same_Color(Red, Green, Blue);
-
-	for (int i = 0; i <= current_brightness; ++i) {  // Use current_brightness instead of 100
-		Set_Brightness(i);
-		WS2812_Send();
-		HAL_Delay(LED_DELAY/speed);
-	}
-
-	for (int i = current_brightness; i >= 0; --i) {  // Use current_brightness instead of 100
-		Set_Brightness(i);
-		WS2812_Send();
-		HAL_Delay(LED_DELAY/speed);
-	}
-}
-
-void Rainbow_Effect_Single (int led_num, int speed) {
-	if (speed > 10) speed = 10;
-	if (speed < 1)	speed = 1;
-//	for (int r = 0; r <= 255; r+=10) {
-//		for (int g = 0; g <= 255; g+=10){
-//			for (int b = 0; b <= 255; b+=10) {
-//				Set_LED(1, r, g, b);
-//				Set_Brightness(100);
-//				WS2812_Send();
-//				HAL_Delay(10);
-//			}
-//		}
-//	}
-
-	//use HSV -> RGB method
-
-	// H (hue): 0 -> 360 (int)
-	// S (saturation): 0 -> 1 (float)
-	// V (value): 0 -> 1 (float)
-
-	//C (chroma) = VxS
-	//H' (hue prime) = H/60
-	//X = Cx(1-fabs(H%2-1))
-
-	//0 <= H' < 1: (C, X, 0)
-	//1 <= H' < 2: (X, C, 0)
-	//2 <= H' < 3: (0, C, X)
-	//3 <= H' < 4: (0, X, C)
-	//4 <= H' < 5: (X, 0, C)
-	//5 <= H' < 6: (C, 0, X)
-
-	for (int hue = 0; hue < 360; hue += 2) {
-		int red, green, blue;
-
-        int sector = hue / 60;
-        int remainder = hue % 60;
-
-        switch(sector) {
-            case 0: red = 255; green = (remainder * 255) / 60; blue = 0; break;
-            case 1: red = 255 - ((remainder * 255) / 60); green = 255; blue = 0; break;
-            case 2: red = 0; green = 255; blue = (remainder * 255) / 60; break;
-            case 3: red = 0; green = 255 - ((remainder * 255) / 60); blue = 255; break;
-            case 4: red = (remainder * 255) / 60; green = 0; blue = 255; break;
-            case 5: red = 255; green = 0; blue = 255 - ((remainder * 255) / 60); break;
-            default: red = 255; green = 0; blue = 0; break;
+        
+        // Average and normalize
+        uint16_t avg_magnitude = bin_count > 0 ? band_sum / bin_count : 0;
+        
+        // Apply noise floor
+        if(avg_magnitude < NOISE_FLOOR) {
+            avg_magnitude = 0;
         }
-
-		//Set_All_LEDs_Same_Color(red, green, blue);
-
-		Set_LED(led_num, red, green, blue);
-		Set_Brightness(DEFAULT_BRIGHTNESS);
-		WS2812_Send();
-		HAL_Delay(LED_DELAY/speed);
-	}
+        
+        // Logarithmic scaling for better dynamic range
+        if(avg_magnitude > 0) {
+            // Simple log approximation: log2(x) ≈ MSB position
+            uint16_t log_mag = 0;
+            uint16_t temp = avg_magnitude;
+            while(temp >>= 1) {
+                log_mag++;
+            }
+            avg_magnitude = (log_mag * avg_magnitude) / 16;
+        }
+        
+        // Enhanced smoothing with previous values
+        freq_bands[band] = (uint16_t)(SMOOTHING_FACTOR * avg_magnitude + 
+                          (1.0f - SMOOTHING_FACTOR) * prev_bands[band]);
+        
+        // Peak hold with faster decay
+        if(freq_bands[band] > peak_bands[band]) {
+            peak_bands[band] = freq_bands[band];
+            peak_time[band] = current_time;
+        } else if(current_time - peak_time[band] > PEAK_HOLD_TIME) {
+            // Exponential decay for smoother peak fall
+            if(peak_bands[band] > 0) {
+                peak_bands[band] = (peak_bands[band] * 95) / 100;
+            }
+        }
+        
+        prev_bands[band] = freq_bands[band];
+    }
 }
 
-void Rainbow_Effect (int speed) {
-	if (speed > 10) speed = 10;
-	if (speed < 1)	speed = 1;
-
-	for (int hue = 0; hue < 360; hue += 36) {
-		int red, green, blue;
-
-		for (int led_num = 0; led_num < MAX_LED; ++led_num) {
-			if (hue > 359) hue = 0;
-			hue += led_num;
-			int sector = hue / 60;
-			int remainder = hue % 60;
-
-			switch(sector) {
-				case 0: red = 255; green = (remainder * 255) / 60; blue = 0; break;
-				case 1: red = 255 - ((remainder * 255) / 60); green = 255; blue = 0; break;
-				case 2: red = 0; green = 255; blue = (remainder * 255) / 60; break;
-				case 3: red = 0; green = 255 - ((remainder * 255) / 60); blue = 255; break;
-				case 4: red = (remainder * 255) / 60; green = 0; blue = 255; break;
-				case 5: red = 255; green = 0; blue = 255 - ((remainder * 255) / 60); break;
-				default: red = 255; green = 0; blue = 0; break;
-			}
-
-			//Set_All_LEDs_Same_Color(red, green, blue);
-
-			Set_LED(led_num, red, green, blue);
-			HAL_Delay(1);
-		}
-
-		Set_Brightness(current_brightness);
-		WS2812_Send();
-		HAL_Delay(LED_DELAY/speed);
-
-		// Check keypad during rainbow effect
-		char key_rainbow = Keypad_Read();
-		if(key_rainbow != 0) {
-			Process_Keypad_Input(key_rainbow);
-			Update_LCD_Display();
-		}
-	}
+// Enhanced color mapping for 200Hz-4000Hz spectrum
+void get_band_color(uint8_t band, uint8_t intensity, uint8_t* r, uint8_t* g, uint8_t* b) {
+    // Enhanced color mapping for audio spectrum
+    switch(band) {
+        case 0: // 200-390Hz - Deep Purple (Sub Bass)
+            *r = intensity / 2;
+            *g = 0;
+            *b = intensity;
+            break;
+            
+        case 1: // 390-547Hz - Blue (Bass)
+            *r = 0;
+            *g = intensity / 4;
+            *b = intensity;
+            break;
+            
+        case 2: // 547-781Hz - Cyan (Low Mid)
+            *r = 0;
+            *g = intensity / 2;
+            *b = intensity;
+            break;
+            
+        case 3: // 781-1094Hz - Light Blue
+            *r = 0;
+            *g = (intensity * 3) / 4;
+            *b = intensity;
+            break;
+            
+        case 4: // 1094-1484Hz - Green (Mid)
+            *r = 0;
+            *g = intensity;
+            *b = intensity / 3;
+            break;
+            
+        case 5: // 1484-1953Hz - Yellow Green
+            *r = intensity / 3;
+            *g = intensity;
+            *b = 0;
+            break;
+            
+        case 6: // 1953-2500Hz - Yellow (Presence)
+            *r = (intensity * 2) / 3;
+            *g = intensity;
+            *b = 0;
+            break;
+            
+        case 7: // 2500-3125Hz - Orange
+            *r = intensity;
+            *g = (intensity * 2) / 3;
+            *b = 0;
+            break;
+            
+        case 8: // 3125-3750Hz - Red Orange
+            *r = intensity;
+            *g = intensity / 3;
+            *b = 0;
+            break;
+            
+        case 9: // 3750-4000Hz - Red (High)
+            *r = intensity;
+            *g = 0;
+            *b = intensity / 4;
+            break;
+    }
 }
 
-void Pixel_Run_Effect (int speed, int red, int green, int blue) {
-	if (speed > 10) speed = 10;
-	if (speed < 1)	speed = 1;
-
-	Set_LED(MAX_LED-1, 0, 0 , 0);
-	for (int i = 1; i < MAX_LED; ++i) {
-		Set_LED(i, red, green, blue);
-		Set_LED(i-1, 0, 0 , 0);
-		Set_Brightness(current_brightness);
-		WS2812_Send();
-		HAL_Delay((LED_DELAY*3)/speed);
-
-		// Check keypad during run effect
-		char key_run = Keypad_Read();
-		if(key_run != 0) {
-			Process_Keypad_Input(key_run);
-			Update_LCD_Display();
-		}
-	}
+// Sample audio data with optimized timing for 10kHz
+void sample_audio(void) {
+    static uint32_t last_sample = 0;
+    uint32_t current_time = HAL_GetTick();
+    
+    // Sample at ~10kHz (every 0.1ms = 100μs)
+    // Using HAL_GetTick() provides 1ms resolution, so we sample as fast as possible
+    if(current_time != last_sample || (HAL_GetTick() == last_sample)) {
+        HAL_ADC_Start(&hadc1);
+        if(HAL_ADC_PollForConversion(&hadc1, 1) == HAL_OK) {
+            uint16_t adc_val = HAL_ADC_GetValue(&hadc1);
+            HAL_ADC_Stop(&hadc1);
+            
+            // Convert to signed and apply pre-emphasis for high frequencies
+            int16_t sample = (int16_t)(adc_val - 2048);
+            
+            // Simple high-pass filter to remove DC and enhance mid-high frequencies
+            static int16_t prev_sample = 0;
+            sample = sample - (prev_sample >> 4); // Mild high-pass
+            prev_sample = sample;
+            
+            adc_buffer[sample_index] = sample;
+            sample_index++;
+            
+            // When buffer is full, trigger FFT processing
+            if(sample_index >= FFT_SIZE) {
+                sample_index = 0;
+                fft_ready = 1;
+            }
+        }
+        last_sample = current_time;
+    }
 }
 
-void Flashing_Effect (int speed, int red, int green, int blue) {
-	if (speed > 10) speed = 10;
-	if (speed < 1)	speed = 1;
-
-	Set_All_LEDs_Same_Color(red, green, blue);
-	Set_Brightness(DEFAULT_BRIGHTNESS);
-	WS2812_Send();
-	HAL_Delay((LED_DELAY*15)/speed);
-	Set_Brightness(0);
-	WS2812_Send();
-	HAL_Delay((LED_DELAY*15)/speed);
-}
-
-// Test LCD function - để kiểm tra kết nối
-void LCD_Test(void) {
-    LCD_Parallel_Clear();
-    LCD_Parallel_SetCursor(0, 0);
-    LCD_Parallel_Print("Hello STM32!");
-    LCD_Parallel_SetCursor(1, 0);
-    LCD_Parallel_Print("LCD Working!");
-    HAL_Delay(2000);
-}
-
-// All LEDs off (effect OFF)
-void All_LEDs_Off(void) {
-    // Tắt tất cả LED và đặt độ sáng về 0
-    for(int i = 0; i < MAX_LED; i++) {
+// Enhanced spectrum display with better scaling
+void display_spectrum(void) {
+    // Clear all LEDs
+    for(uint8_t i = 0; i < MAX_LED; i++) {
         Set_LED(i, 0, 0, 0);
     }
-    Set_Brightness(0);
-    WS2812_Send();
-}
-
-// Function to get temperature-based color (blue to red)
-void get_temperature_color(float intensity, uint8_t* r, uint8_t* g, uint8_t* b) {
-    // Map intensity (0-255) to temperature color
-    // Blue (cold) -> Cyan -> Green -> Yellow -> Red (hot)
-    if (intensity < 51) {  // 0-50: Blue to Cyan
-        *r = 0;
-        *g = intensity * 5;
-        *b = 255;
-    } else if (intensity < 102) {  // 51-101: Cyan to Green
-        *r = 0;
-        *g = 255;
-        *b = 255 - (intensity - 51) * 5;
-    } else if (intensity < 153) {  // 102-152: Green to Yellow
-        *r = (intensity - 102) * 5;
-        *g = 255;
-        *b = 0;
-    } else if (intensity < 204) {  // 153-203: Yellow to Orange
-        *r = 255;
-        *g = 255 - (intensity - 153) * 5;
-        *b = 0;
-    } else {  // 204-255: Orange to Red
-        *r = 255;
-        *g = 0;
-        *b = 0;
-    }
-}
-
-// Function to check if a position is valid and not adjacent to any lit LED
-int is_valid_position(int row, int col, int* lit_positions, int num_lit) {
-    // Check if position is within bounds
-    if (row < 0 || row >= 3 || col < 0 || col >= 10) {
-        return 0;
-    }
     
-    // Check if position is adjacent to any lit LED
-    for (int i = 0; i < num_lit; i++) {
-        int lit_row = lit_positions[i] / 10;
-        int lit_col = lit_positions[i] % 10;
+    // Display each frequency band
+    for(uint8_t band = 0; band < FREQ_BANDS; band++) {
+        // Enhanced scaling for better visualization
+        uint16_t scaled = freq_bands[band] >> 4; // Divide by 16 for scaling
+        if(scaled > 255) scaled = 255;
         
-        // Check if positions are adjacent (including diagonals)
-        if (abs(row - lit_row) <= 1 && abs(col - lit_col) <= 1) {
-            return 0;
-        }
-    }
-    
-    return 1;
-}
-
-// Function to control LED based on sound frequency with random flashing effect
-#define SILENT_VALUE 700
-#define SR_UPDATE_RATE 10
-void Sound_Reactive_LED(uint32_t sound_value) {
-    static uint32_t last_update = 0;
-    static int lit_positions[30];  // Store positions of lit LEDs
-    static int num_lit = 0;
-    
-    if (sound_value < SILENT_VALUE) {
-        Set_All_LEDs_Same_Color(0, 0, 0);
-        Set_Brightness(current_brightness);
-        WS2812_Send();
-        return;
-    }
-    
-    // Map sound value to LED intensity (700-4095 to 0-255)
-    uint8_t intensity = ((sound_value - SILENT_VALUE) * 255) / (4095 - SILENT_VALUE);
-    
-    // Update effect every 10ms
-    if (HAL_GetTick() - last_update > SR_UPDATE_RATE) {
-        last_update = HAL_GetTick();
+        uint8_t intensity = (uint8_t)scaled;
         
-        // Calculate number of LEDs to light based on intensity
-        int num_leds = (intensity * 15) / 255;  // Max 15 LEDs
-        if (num_leds < 1) num_leds = 1;
-        if (num_leds > 15) num_leds = 15;
-        
-        Set_All_LEDs_Same_Color(0, 0, 0);
-        
-        num_lit = 0;
-        
-        // Try to light up new LEDs
-        int attempts = 0;
-        while (num_lit < num_leds && attempts < 100) {
-            attempts++;
+        if(intensity > 10) { // Lower threshold for more sensitivity
+            // Calculate number of LEDs to light in this column (0-3)
+            uint8_t num_leds = (intensity * MATRIX_ROWS) / 255;
+            if(num_leds > MATRIX_ROWS) num_leds = MATRIX_ROWS;
             
-            // Generate random position
-            int row = rand() % 3;
-            int col = rand() % 10;
+            // Get color for this band
+            uint8_t r, g, b;
+            get_band_color(band, intensity, &r, &g, &b);
             
-            // Check if position is valid
-            if (is_valid_position(row, col, lit_positions, num_lit)) {
-
-                lit_positions[num_lit] = row * 10 + col;
-                num_lit++;
+            // Light LEDs from bottom up with gradient effect
+            for(uint8_t led = 0; led < num_leds; led++) {
+                uint8_t row = MATRIX_ROWS - 1 - led;
                 
-                // Get color based on intensity
-                uint8_t r, g, b;
-                get_temperature_color(intensity, &r, &g, &b);
+                // Apply brightness gradient (bottom brighter than top)
+                uint8_t gradient = 255 - (led * 60); // Reduce brightness by 60 for each level
                 
-                Set_LED_Matrix(row, col, r, g, b);
+                Set_LED_Matrix(row, band, 
+                              (r * gradient) / 255,
+                              (g * gradient) / 255,
+                              (b * gradient) / 255);
+            }
+            
+            // Show peak with white color
+            uint16_t peak_scaled = peak_bands[band] >> 4;
+            if(peak_scaled > 255) peak_scaled = 255;
+            uint8_t peak_leds = (peak_scaled * MATRIX_ROWS) / 255;
+            
+            if(peak_leds < MATRIX_ROWS && peak_leds > num_leds) {
+                Set_LED_Matrix(MATRIX_ROWS - 1 - peak_leds, band, 255, 255, 255);
             }
         }
     }
@@ -783,127 +521,80 @@ void Sound_Reactive_LED(uint32_t sound_value) {
     WS2812_Send();
 }
 
-void reset_sound_stats(void) {
-    mn = 5000;  // Reset min về giá trị cao
-    mx = 0;     // Reset max về 0
-    avg = 0;    // Reset average về 0
-    cnt = 0;    // Reset counter về 0
-}
-
-// Hàm để xác định cột LED dựa trên tần số
-int get_frequency_column(int freq) {
-    if (freq < FREQ_MIN) return -1;
-    if (freq > FREQ_MAX) return -1;
-    
-    return (freq - FREQ_MIN) / FREQ_STEP;
-}
-
-// Hàm lấy màu dựa trên cột
-void get_frequency_color(int freq, float intensity, uint8_t* r, uint8_t* g, uint8_t* b) {
-    int column = get_frequency_column(freq);
-    if (column < 0) column = 0;
-    if (column >= FREQ_COLUMNS) column = FREQ_COLUMNS - 1;
-    
-    // Chuyển đổi từ xanh dương -> xanh lá -> vàng -> cam -> đỏ
-    switch(column) {
-        case 0: // Xanh dương đậm
-            *r = 0;
-            *g = 0;
-            *b = (uint8_t)(intensity * 255);
-            break;
-        case 1: // Xanh dương nhạt
-            *r = 0;
-            *g = (uint8_t)(intensity * 100);
-            *b = (uint8_t)(intensity * 255);
-            break;
-        case 2: // Xanh lá nhạt
-            *r = 0;
-            *g = (uint8_t)(intensity * 255);
-            *b = (uint8_t)(intensity * 100);
-            break;
-        case 3: // Xanh lá đậm
-            *r = 0;
-            *g = (uint8_t)(intensity * 255);
-            *b = 0;
-            break;
-        case 4: // Xanh lá - vàng
-            *r = (uint8_t)(intensity * 100);
-            *g = (uint8_t)(intensity * 255);
-            *b = 0;
-            break;
-        case 5: // Vàng
-            *r = (uint8_t)(intensity * 255);
-            *g = (uint8_t)(intensity * 255);
-            *b = 0;
-            break;
-        case 6: // Cam nhạt
-            *r = (uint8_t)(intensity * 255);
-            *g = (uint8_t)(intensity * 180);
-            *b = 0;
-            break;
-        case 7: // Cam đậm
-            *r = (uint8_t)(intensity * 255);
-            *g = (uint8_t)(intensity * 100);
-            *b = 0;
-            break;
-        case 8: // Đỏ cam
-            *r = (uint8_t)(intensity * 255);
-            *g = (uint8_t)(intensity * 50);
-            *b = 0;
-            break;
-        case 9: // Đỏ
-            *r = (uint8_t)(intensity * 255);
-            *g = 0;
-            *b = 0;
-            break;
+void Set_LED(int LEDnum, int Red, int Green, int Blue) {
+    if(LEDnum >= 0 && LEDnum < MAX_LED) {
+        LED_Data[LEDnum][0] = LEDnum;
+        LED_Data[LEDnum][1] = Green;
+        LED_Data[LEDnum][2] = Red;
+        LED_Data[LEDnum][3] = Blue;
     }
 }
 
-// Hàm hiệu ứng nháy theo tần số
-void Frequency_Column_Effect(int adc_value) {
-    // Tính cường độ dựa trên giá trị ADC
-    float intensity = (float)(adc_value - 1700) / (4000 - 1700);
-    if (intensity < 0.05f) intensity = 0;  // Thêm ngưỡng để tránh nhiễu
-    if (intensity > 1) intensity = 1;
-    
-    // Tính số cột cần sáng dựa trên cường độ
-    int num_columns = (int)(intensity * FREQ_COLUMNS);
-    
-    // Cập nhật từng cột
-    for (int i = 0; i < FREQ_COLUMNS; i++) {
-        float target_intensity;
-        if (i < num_columns) {
-            target_intensity = intensity;  // Sử dụng cường độ thực tế
-        } else {
-            target_intensity = 0.0f;  // Tắt hoàn toàn
-        }
-        
-        // Áp dụng smoothing
-        prev_intensities[i] = prev_intensities[i] * (1.0f - SMOOTHING_FACTOR) + 
-                            target_intensity * SMOOTHING_FACTOR;
-        
-        // Thêm hiệu ứng fade cho các cột cao hơn
-        float fade_factor = 1.0f - ((float)i / FREQ_COLUMNS) * 0.3f;
-        
-        uint8_t r, g, b;
-        get_frequency_color(FREQ_MIN + i * FREQ_STEP, 1.0, &r, &g, &b);
-        
-        // Áp dụng cường độ và fade
-        float final_intensity = prev_intensities[i] * fade_factor;
-        
-        // Chỉ cập nhật LED nếu có cường độ đáng kể
-        if (final_intensity > 0.01f) {
-            Set_LED_Col(i, 
-                       (uint8_t)(r * final_intensity), 
-                       (uint8_t)(g * final_intensity), 
-                       (uint8_t)(b * final_intensity));
-        } else {
-            Set_LED_Col(i, 0, 0, 0);  // Tắt hoàn toàn nếu cường độ quá thấp
+void Set_LED_Matrix(int row, int col, int Red, int Green, int Blue) {
+    if(row >= 0 && row < 3 && col >= 0 && col < 10) {
+        const int LED_Matrix[3][10] = {
+            {40, 39, 38, 37, 36, 35, 34, 33, 32, 31},
+            {16, 17, 18, 19, 20, 21, 22, 23, 24, 25},
+            {11, 10,  9,  8,  7,  6,  5,  4,  3,  2},
+        };
+        Set_LED(LED_Matrix[row][col], Red, Green, Blue);
+    }
+}
+
+void Set_LED_Col(int col_num, int Red, int Green, int Blue) {
+    if(col_num >= 0 && col_num < 10) {
+        Set_LED(40-col_num, Red, Green, Blue); //top, from right
+        Set_LED(16+col_num, Red, Green, Blue); //mid, from left
+        Set_LED(11-col_num, Red, Green, Blue); //bot, from right
+    }
+}
+
+void Set_Brightness(int brightness) {
+    #if USE_BRIGHTNESS
+    if (brightness > 100) brightness = 100;
+    if (brightness < 0) brightness = 0;
+
+    for (int i = 0; i < MAX_LED; i++) {
+        LED_Mod[i][0] = LED_Data[i][0];
+        for (int j = 1; j < 4; j++) {
+            LED_Mod[i][j] = (LED_Data[i][j] * brightness) / 100;
         }
     }
-    
-    Set_Brightness(current_brightness);
-    WS2812_Send();
+    #endif
+}
+
+void WS2812_Send(void) {
+    uint32_t indx = 0;
+    uint32_t color;
+
+    for (int i = 0; i < MAX_LED; i++) {
+        color = ((LED_Mod[i][1] << 16) | (LED_Mod[i][2] << 8) | (LED_Mod[i][3]));
+
+        for (int j = 23; j >= 0; j--) {
+            pwmData[indx++] = (color & (1 << j)) ? 60 : 30;
+        }
+    }
+
+    for (int i = 0; i < 50; i++) {
+        pwmData[indx++] = 0;
+    }
+
+    datasentflag = 0;
+    HAL_TIM_PWM_Start_DMA(&htim1, TIM_CHANNEL_1, (uint32_t *)pwmData, indx);
+
+    uint32_t timeout = 100000;
+    while(!datasentflag && timeout--);
+
+    if(!timeout) {
+        HAL_TIM_PWM_Stop_DMA(&htim1, TIM_CHANNEL_1);
+        datasentflag = 1;
+    }
+}
+
+void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim) {
+    if (htim->Instance == TIM1) {
+        datasentflag = 1;
+    }
 }
 
 /* USER CODE END 0 */
@@ -914,25 +605,11 @@ void Frequency_Column_Effect(int adc_value) {
   */
 int main(void)
 {
-
   /* USER CODE BEGIN 1 */
   /* USER CODE END 1 */
 
-  /* MCU Configuration--------------------------------------------------------*/
-
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
-
-  /* USER CODE BEGIN Init */
-
-  /* USER CODE END Init */
-
-  /* Configure the system clock */
   SystemClock_Config();
-
-  /* USER CODE BEGIN SysInit */
-
-  /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
@@ -941,22 +618,41 @@ int main(void)
   MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
 
-  // Initialize keypad
-  Keypad_Init();
-
-  // Initialize LCD Parallel
+  // Initialize LCD
   LCD_Parallel_Init();
   LCD_Parallel_Clear();
-  //LCD_Parallel_DisplayOn();
-  //LCD_Parallel_CursorOn();
+  LCD_Parallel_Print("Audio 200-4000Hz");
+  HAL_Delay(1000);
 
-  // Turn off all LEDs initially
-  Set_All_LEDs_Same_Color(0, 0, 0);
+  // Initialize variables
+  for(uint8_t i = 0; i < FREQ_BANDS; i++) {
+      freq_bands[i] = 0;
+      prev_bands[i] = 0;
+      peak_bands[i] = 0;
+      peak_time[i] = 0;
+  }
+  
+  sample_index = 0;
+  fft_ready = 0;
+  gain_factor = 256;
+
+  // Clear LED strip
+  for(uint8_t i = 0; i < MAX_LED; i++) {
+      Set_LED(i, 0, 0, 0);
+  }
   Set_Brightness(0);
   WS2812_Send();
 
-  // Reset sound stats
-  reset_sound_stats();
+  LCD_Parallel_Clear();
+  LCD_Parallel_SetCursor(0, 0);
+  LCD_Parallel_Print("Range:200-4000Hz");
+  LCD_Parallel_SetCursor(1, 0);
+  LCD_Parallel_Print("Res:78Hz/bin");
+  HAL_Delay(1000);
+  
+  LCD_Parallel_Clear();
+  LCD_Parallel_Print("Ready!");
+  HAL_Delay(500);
 
   /* USER CODE END 2 */
 
@@ -964,51 +660,61 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    // Sample audio continuously at high rate
+    sample_audio();
+    
+    // Process FFT when buffer is full
+    if(fft_ready) {
+        fft_ready = 0;
+        
+        // Copy ADC data to FFT input and clear imaginary
+        for(uint8_t i = 0; i < FFT_SIZE; i++) {
+            fft_real[i] = adc_buffer[i];
+            fft_imag[i] = 0;
+        }
+        
+        // Perform FFT
+        perform_fft();
+        
+        // Calculate magnitude
+        calculate_magnitude();
+        
+        // Apply AGC
+        apply_agc();
+        
+        // Process frequency bands for 200Hz-4000Hz
+        process_frequency_bands();
+        
+        // Display on LEDs
+        display_spectrum();
+        
+        // Update LCD with frequency range info
+        static uint32_t last_lcd = 0;
+        if(HAL_GetTick() - last_lcd > 2000) {
+            LCD_Parallel_Clear();
+            LCD_Parallel_SetCursor(0, 0);
+            LCD_Parallel_Print("200-4000Hz");
+            
+            LCD_Parallel_SetCursor(1, 0);
+            char debug_str[16];
+            // Show gain and max frequency band activity
+            uint8_t max_band = 0;
+            for(uint8_t i = 1; i < FREQ_BANDS; i++) {
+                if(freq_bands[i] > freq_bands[max_band]) {
+                    max_band = i;
+                }
+            }
+            snprintf(debug_str, sizeof(debug_str), "G:%d B:%d", 
+                    gain_factor >> 8, max_band);
+            LCD_Parallel_Print(debug_str);
+            
+            last_lcd = HAL_GetTick();
+        }
+    }
+    
+    // No delay for maximum sampling rate
+    
     /* USER CODE END WHILE */
-	HAL_ADC_Start(&hadc1);
-	var = HAL_ADC_GetValue(&hadc1);
-	HAL_ADC_Stop(&hadc1);
-
-	if (var > mx) mx = var;
-	if (var < mn && var > SILENT_VALUE && calculate_frequency(var) > 0) mn = var;
-	avg += var;
-	cnt++;
-
-
-	// Khai báo biến chuỗi
-	char t[20], mnt[10], mxt[10], freqt[10];
-	int freq = calculate_frequency(var);
-
-	// Cập nhật hiệu ứng LED
-	Frequency_Column_Effect(var);
-
-	// Hiển thị thông tin LCD
-	LCD_Parallel_Clear();
-
-	// Dòng 1: Hiển thị giá trị ADC và tần số
-	LCD_Parallel_SetCursor(0, 0);
-	LCD_Parallel_Print("ADC:");
-	LCD_Parallel_Print(int_to_string(var, t));
-
-	LCD_Parallel_SetCursor(0, 8);
-	LCD_Parallel_Print("Hz:");
-	LCD_Parallel_Print(int_to_string(freq, freqt));
-
-	// Dòng 2: Hiển thị giá trị min và max
-	LCD_Parallel_SetCursor(1, 0);
-	LCD_Parallel_Print("Min:");
-	if(mn != 5000)
-		LCD_Parallel_Print(int_to_string(calculate_frequency(mn), mnt));
-	else
-		LCD_Parallel_Print("NaN");
-
-	LCD_Parallel_SetCursor(1, 8);
-	LCD_Parallel_Print("Max:");
-	LCD_Parallel_Print(int_to_string(calculate_frequency(mx), mxt));
-
-	//HAL_Delay(10);
-
-    /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
 }
@@ -1178,6 +884,81 @@ static void MX_TIM1_Init(void)
 
   /* USER CODE END TIM1_Init 2 */
   HAL_TIM_MspPostInit(&htim1);
+
+}
+
+/**
+  * @brief TIM3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM3_Init(void)
+{
+
+  /* USER CODE BEGIN TIM3_Init 0 */
+
+  /* USER CODE END TIM3_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+  TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig = {0};
+
+  /* USER CODE BEGIN TIM3_Init 1 */
+
+  /* USER CODE END TIM3_Init 1 */
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 0;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 90-1;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.RepetitionCounter = 0;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
+  sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sBreakDeadTimeConfig.OffStateRunMode = TIM_OSSR_DISABLE;
+  sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
+  sBreakDeadTimeConfig.LockLevel = TIM_LOCKLEVEL_OFF;
+  sBreakDeadTimeConfig.DeadTime = 0;
+  sBreakDeadTimeConfig.BreakState = TIM_BREAK_DISABLE;
+  sBreakDeadTimeConfig.BreakPolarity = TIM_BREAKPOLARITY_HIGH;
+  sBreakDeadTimeConfig.AutomaticOutput = TIM_AUTOMATICOUTPUT_DISABLE;
+  if (HAL_TIMEx_ConfigBreakDeadTime(&htim3, &sBreakDeadTimeConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM3_Init 2 */
+
+  /* USER CODE END TIM3_Init 2 */
+  HAL_TIM_MspPostInit(&htim3);
 
 }
 
